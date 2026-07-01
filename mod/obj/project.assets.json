@@ -13,11 +13,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Joseph\\AI_Train\\AI_Train.csproj",
+      "projectUniqueName": "C:\\Users\\Joseph\\AI_Train\\mod\\AI_Train.csproj",
       "projectName": "AI_Train",
-      "projectPath": "C:\\Users\\Joseph\\AI_Train\\AI_Train.csproj",
+      "projectPath": "C:\\Users\\Joseph\\AI_Train\\mod\\AI_Train.csproj",
       "packagesPath": "C:\\Users\\Joseph\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Joseph\\AI_Train\\obj\\",
+      "outputPath": "C:\\Users\\Joseph\\AI_Train\\mod\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\Joseph\\AppData\\Roaming\\NuGet\\NuGet.Config"

@@ -54,6 +54,10 @@ internal sealed class TrainingFoundation : IDisposable
     private readonly HashSet<string> _destroyedRoots = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _unknownRoots = new(StringComparer.OrdinalIgnoreCase);
 
+    private TrainingEnvironmentManager _trainingEnvironmentManager;
+    private ObservationBuilder _observationBuilder;
+    private ActionExecutor _actionExecutor;
+    private TrainingBridgeServer _bridgeServer;
     private string _logRoot;
     private string _dumpRoot;
     private string _logFilePath;
@@ -61,7 +65,6 @@ internal sealed class TrainingFoundation : IDisposable
     private float _nextScanTime;
     private DateTime _initializedAtUtc;
     private bool _initialScanComplete;
-    private bool _trainingSceneBuilt;
     private bool _gymTransitionAttempted;
     private bool _gymTransitionSucceeded;
     private string _lastActiveSceneName;
@@ -80,10 +83,14 @@ internal sealed class TrainingFoundation : IDisposable
             AutoFlush = true
         };
         _initializedAtUtc = DateTime.UtcNow;
+        _trainingEnvironmentManager = new TrainingEnvironmentManager(LogInfo, LogWarn, LogError);
+        _observationBuilder = new ObservationBuilder(LogInfo, LogWarn);
+        _actionExecutor = new ActionExecutor(_trainingEnvironmentManager, LogInfo, LogWarn);
+        _bridgeServer = new TrainingBridgeServer(_trainingEnvironmentManager, _observationBuilder, _actionExecutor, LogInfo, LogWarn, LogError);
 
         LogInfo("AI_Train bootstrap initialized.");
         LogInfo($"Log file: {_logFilePath}");
-        LogInfo("Hotkeys: F7 = dump active scenes, F8 = force training scene build, F9 = rescan all.");
+        LogInfo("Hotkeys: F7 = dump active scenes, F8 = force training scene build, F9 = rescan all, F11 = dump observation.");
 
         ScanAllScenes("initialize");
     }
@@ -110,22 +117,40 @@ internal sealed class TrainingFoundation : IDisposable
             TryForceGymLoad("manual-force-gym");
         }
 
+        if (Input.GetKeyDown(KeyCode.F11))
+        {
+            PublishObservation("manual-observation");
+        }
+
+        _trainingEnvironmentManager?.UpdateTelemetry(Time.frameCount, Time.unscaledTime);
+        _bridgeServer?.Pump();
+
         if (Time.unscaledTime >= _nextScanTime)
         {
             _nextScanTime = Time.unscaledTime + AutoScanIntervalSeconds;
-            if (_initialScanComplete && !_trainingSceneBuilt)
+            if (_initialScanComplete && !(_trainingEnvironmentManager?.IsReady ?? false))
             {
                 ScanAllScenes("periodic");
             }
         }
 
-        if (!_trainingSceneBuilt &&
+        if (!(_trainingEnvironmentManager?.IsReady ?? false) &&
             !_gymTransitionSucceeded &&
             !_gymTransitionAttempted &&
             DateTime.UtcNow - _initializedAtUtc >= TimeSpan.FromSeconds(15))
         {
             TryForceGymLoad("auto-loader-timeout");
         }
+
+        if (_trainingEnvironmentManager?.IsReady ?? false)
+        {
+            _bridgeServer?.StartIfNeeded();
+        }
+    }
+
+    public void OnLateUpdate()
+    {
+        _actionExecutor?.Pump(Time.unscaledDeltaTime);
     }
 
     public void OnSceneWasLoaded(int buildIndex, string sceneName)
@@ -143,6 +168,7 @@ internal sealed class TrainingFoundation : IDisposable
     {
         try
         {
+            _bridgeServer?.Dispose();
             _writer?.Flush();
             _writer?.Dispose();
         }
@@ -177,7 +203,7 @@ internal sealed class TrainingFoundation : IDisposable
 
         WriteSceneBundle(reason, reports, _bestPlayerCandidate);
 
-        if (AutoBuildTrainingScene && !_trainingSceneBuilt && _bestPlayerCandidate != null)
+        if (AutoBuildTrainingScene && !(_trainingEnvironmentManager?.IsReady ?? false) && _bestPlayerCandidate != null)
         {
             TryBuildTrainingScene(reason);
         }
@@ -1182,7 +1208,7 @@ internal sealed class TrainingFoundation : IDisposable
 
     private void TryBuildTrainingScene(string reason)
     {
-        if (_trainingSceneBuilt)
+        if (_trainingEnvironmentManager?.IsReady ?? false)
         {
             return;
         }
@@ -1261,7 +1287,6 @@ internal sealed class TrainingFoundation : IDisposable
         }
 
         UnitySceneManager.SetActiveScene(trainingScene);
-        _trainingSceneBuilt = true;
 
         var summary = new
         {
@@ -1276,6 +1301,42 @@ internal sealed class TrainingFoundation : IDisposable
 
         WriteJson($"training_plan_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json", summary);
         LogInfo($"Training scene ready. Moved={movedRoots.Count}, pruned={prunedRoots.Count}, retainedUnknown={retainedUnknownRoots.Count}.");
+
+        var managerInitialized = _trainingEnvironmentManager.InitializeFromDiscoveredScene(trainingScene, trainingActor, sourceScene.name, _bestPlayerCandidate.Path);
+        PublishObservation("training-ready");
+        WriteJson($"training_status_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json", _trainingEnvironmentManager.GetStatus());
+        _bridgeServer?.StartIfNeeded();
+        _bridgeServer?.Pump();
+        if (!managerInitialized)
+        {
+            LogWarn("TrainingEnvironmentManager reported an initialization failure after the training scene was built.");
+        }
+    }
+
+    private void PublishObservation(string reason)
+    {
+        if (_trainingEnvironmentManager == null || _observationBuilder == null)
+        {
+            LogWarn($"Observation publish skipped ({reason}): manager or builder unavailable.");
+            return;
+        }
+
+        try
+        {
+            LogInfo($"Building observation snapshot ({reason}).");
+            var observation = _observationBuilder.BuildObservation(_trainingEnvironmentManager, reason);
+            WriteJson($"observation_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json", observation);
+            LogInfo($"Observation snapshot written ({reason}). sceneReady={observation.sceneReady} episodeId={observation.episodeId} episodeStep={observation.episodeStep} warnings={observation.warnings?.Count ?? 0}.");
+            if (_trainingEnvironmentManager?.IsReady ?? false)
+            {
+                _bridgeServer?.StartIfNeeded();
+                _bridgeServer?.Pump();
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"Observation snapshot failed ({reason}): {ex.Message}");
+        }
     }
 
     private static Scene GetOrCreateTrainingScene()

@@ -1,0 +1,21 @@
+{
+  "host": "127.0.0.1",
+  "port": 8765,
+  "timeoutMs": 5000,
+  "episodeLength": 20,
+  "actionDurationMs": 100,
+  "logDirectory": "runs",
+  "safeHandBounds": {
+    "left": {
+      "x": [-0.6, -0.05],
+      "y": [0.85, 1.45],
+      "z": [0.2, 0.7]
+    },
+    "right": {
+      "x": [0.05, 0.6],
+      "y": [0.85, 1.45],
+      "z": [0.2, 0.7]
+    }
+  },
+  "protocolVersion": "0.3"
+}

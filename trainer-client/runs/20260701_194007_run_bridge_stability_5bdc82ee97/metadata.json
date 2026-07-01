@@ -1,0 +1,66 @@
+{
+  "config": {
+    "actionDurationMs": 100,
+    "episodeLength": 20,
+    "host": "127.0.0.1",
+    "logDirectory": "runs",
+    "port": 8765,
+    "protocolVersion": "0.3",
+    "safeHandBounds": {
+      "left": {
+        "x": {
+          "maximum": -0.05,
+          "minimum": -0.6
+        },
+        "y": {
+          "maximum": 1.45,
+          "minimum": 0.85
+        },
+        "z": {
+          "maximum": 0.7,
+          "minimum": 0.2
+        }
+      },
+      "right": {
+        "x": {
+          "maximum": 0.6,
+          "minimum": 0.05
+        },
+        "y": {
+          "maximum": 1.45,
+          "minimum": 0.85
+        },
+        "z": {
+          "maximum": 0.7,
+          "minimum": 0.2
+        }
+      }
+    },
+    "timeoutMs": 5000
+  },
+  "finishedAt": "2026-07-01T19:40:07.491446Z",
+  "paths": {
+    "metadata": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_194007_run_bridge_stability_5bdc82ee97\\metadata.json",
+    "runDirectory": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_194007_run_bridge_stability_5bdc82ee97",
+    "steps": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_194007_run_bridge_stability_5bdc82ee97\\steps.jsonl"
+  },
+  "runId": "20260701T194007Z-5bdc82ee97",
+  "scriptName": "run_bridge_stability",
+  "startedAt": "2026-07-01T19:40:07.149141Z",
+  "status": "success",
+  "summary": {
+    "averageStepTimeMs": 8.397856670975065,
+    "cycleFailureCount": 0,
+    "cycleSuccessCount": 10,
+    "cycleTimeoutCount": 0,
+    "cyclesLog": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_194007_run_bridge_stability_5bdc82ee97\\cycles.jsonl",
+    "cyclesObserved": 10,
+    "cyclesRequested": 10,
+    "maxStepTimeMs": 26.905200036708266,
+    "repeatedErrors": [],
+    "stepFailureCount": 0,
+    "stepSuccessCount": 30,
+    "stepTimeoutCount": 0,
+    "stepsObserved": 30
+  }
+}

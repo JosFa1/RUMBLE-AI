@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "action-v0.1.json",
+  "title": "Training Action v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["leftHandTargetLocal", "rightHandTargetLocal", "durationMs"],
+  "properties": {
+    "leftHandTargetLocal": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "type": "number" },
+      "description": "Local-space target for the left hand."
+    },
+    "rightHandTargetLocal": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "type": "number" },
+      "description": "Local-space target for the right hand."
+    },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "description": "How long the step should run in milliseconds."
+    }
+  }
+}

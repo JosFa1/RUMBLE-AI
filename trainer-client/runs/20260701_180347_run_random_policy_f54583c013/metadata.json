@@ -1,0 +1,59 @@
+{
+  "config": {
+    "actionDurationMs": 100,
+    "episodeLength": 2,
+    "host": "127.0.0.1",
+    "logDirectory": "runs",
+    "port": 8765,
+    "protocolVersion": "0.3",
+    "safeHandBounds": {
+      "left": {
+        "x": {
+          "maximum": -0.05,
+          "minimum": -0.6
+        },
+        "y": {
+          "maximum": 1.45,
+          "minimum": 0.85
+        },
+        "z": {
+          "maximum": 0.7,
+          "minimum": 0.2
+        }
+      },
+      "right": {
+        "x": {
+          "maximum": 0.6,
+          "minimum": 0.05
+        },
+        "y": {
+          "maximum": 1.45,
+          "minimum": 0.85
+        },
+        "z": {
+          "maximum": 0.7,
+          "minimum": 0.2
+        }
+      }
+    },
+    "timeoutMs": 5000
+  },
+  "error": "Socket error talking to 127.0.0.1:8765: [WinError 10054] An existing connection was forcibly closed by the remote host",
+  "finishedAt": "2026-07-01T18:03:47.437473Z",
+  "paths": {
+    "metadata": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_180347_run_random_policy_f54583c013\\metadata.json",
+    "runDirectory": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_180347_run_random_policy_f54583c013",
+    "steps": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_180347_run_random_policy_f54583c013\\steps.jsonl"
+  },
+  "runId": "20260701T180347Z-f54583c013",
+  "scriptName": "run_random_policy",
+  "startedAt": "2026-07-01T18:03:47.393790Z",
+  "status": "failed",
+  "summary": {
+    "averageStepTimeMs": null,
+    "episodes": [],
+    "failureCount": 0,
+    "stepCount": 0,
+    "totalReward": 0.0
+  }
+}

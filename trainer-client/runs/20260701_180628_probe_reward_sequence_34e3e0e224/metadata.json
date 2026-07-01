@@ -1,0 +1,56 @@
+{
+  "config": {
+    "actionDurationMs": 100,
+    "episodeLength": 20,
+    "host": "127.0.0.1",
+    "logDirectory": "runs",
+    "port": 8765,
+    "protocolVersion": "0.3",
+    "safeHandBounds": {
+      "left": {
+        "x": {
+          "maximum": -0.05,
+          "minimum": -0.6
+        },
+        "y": {
+          "maximum": 1.45,
+          "minimum": 0.85
+        },
+        "z": {
+          "maximum": 0.7,
+          "minimum": 0.2
+        }
+      },
+      "right": {
+        "x": {
+          "maximum": 0.6,
+          "minimum": 0.05
+        },
+        "y": {
+          "maximum": 1.45,
+          "minimum": 0.85
+        },
+        "z": {
+          "maximum": 0.7,
+          "minimum": 0.2
+        }
+      }
+    },
+    "timeoutMs": 5000
+  },
+  "finishedAt": "2026-07-01T18:06:28.730324Z",
+  "paths": {
+    "metadata": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_180628_probe_reward_sequence_34e3e0e224\\metadata.json",
+    "runDirectory": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_180628_probe_reward_sequence_34e3e0e224",
+    "steps": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_180628_probe_reward_sequence_34e3e0e224\\steps.jsonl"
+  },
+  "runId": "20260701T180628Z-34e3e0e224",
+  "scriptName": "probe_reward_sequence",
+  "startedAt": "2026-07-01T18:06:28.713620Z",
+  "status": "success",
+  "summary": {
+    "easyReward": 0.10199961,
+    "failureCount": 0,
+    "impossibleReward": -0.048000097
+  }
+}

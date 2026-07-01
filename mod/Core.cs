@@ -20,6 +20,11 @@ public sealed class Core : MelonMod
         _foundation?.OnUpdate();
     }
 
+    public override void OnLateUpdate()
+    {
+        _foundation?.OnLateUpdate();
+    }
+
     public override void OnSceneWasLoaded(int buildIndex, string sceneName)
     {
         _foundation?.OnSceneWasLoaded(buildIndex, sceneName);

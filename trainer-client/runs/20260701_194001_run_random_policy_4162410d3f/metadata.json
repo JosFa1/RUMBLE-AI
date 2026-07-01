@@ -1,0 +1,66 @@
+{
+  "config": {
+    "actionDurationMs": 100,
+    "episodeLength": 3,
+    "host": "127.0.0.1",
+    "logDirectory": "runs",
+    "port": 8765,
+    "protocolVersion": "0.3",
+    "safeHandBounds": {
+      "left": {
+        "x": {
+          "maximum": -0.05,
+          "minimum": -0.6
+        },
+        "y": {
+          "maximum": 1.45,
+          "minimum": 0.85
+        },
+        "z": {
+          "maximum": 0.7,
+          "minimum": 0.2
+        }
+      },
+      "right": {
+        "x": {
+          "maximum": 0.6,
+          "minimum": 0.05
+        },
+        "y": {
+          "maximum": 1.45,
+          "minimum": 0.85
+        },
+        "z": {
+          "maximum": 0.7,
+          "minimum": 0.2
+        }
+      }
+    },
+    "timeoutMs": 5000
+  },
+  "finishedAt": "2026-07-01T19:40:01.515719Z",
+  "paths": {
+    "metadata": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_194001_run_random_policy_4162410d3f\\metadata.json",
+    "runDirectory": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_194001_run_random_policy_4162410d3f",
+    "steps": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_194001_run_random_policy_4162410d3f\\steps.jsonl"
+  },
+  "runId": "20260701T194001Z-4162410d3f",
+  "scriptName": "run_random_policy",
+  "startedAt": "2026-07-01T19:40:01.484545Z",
+  "status": "success",
+  "summary": {
+    "averageReward": 0.05866655233333334,
+    "averageStepTimeMs": 8.110333350487053,
+    "episodes": [
+      {
+        "episodeFailures": 0,
+        "episodeIndex": 1,
+        "episodeReward": 0.175999657,
+        "episodeSteps": 3
+      }
+    ],
+    "failureCount": 0,
+    "stepCount": 3,
+    "totalReward": 0.175999657
+  }
+}

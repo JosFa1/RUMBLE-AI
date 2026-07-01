@@ -1,0 +1,59 @@
+{
+  "config": {
+    "actionDurationMs": 50,
+    "episodeLength": 5,
+    "host": "127.0.0.1",
+    "logDirectory": "runs",
+    "port": 8765,
+    "protocolVersion": "0.3",
+    "safeHandBounds": {
+      "left": {
+        "x": {
+          "maximum": -0.05,
+          "minimum": -0.6
+        },
+        "y": {
+          "maximum": 1.45,
+          "minimum": 0.85
+        },
+        "z": {
+          "maximum": 0.7,
+          "minimum": 0.2
+        }
+      },
+      "right": {
+        "x": {
+          "maximum": 0.6,
+          "minimum": 0.05
+        },
+        "y": {
+          "maximum": 1.45,
+          "minimum": 0.85
+        },
+        "z": {
+          "maximum": 0.7,
+          "minimum": 0.2
+        }
+      }
+    },
+    "timeoutMs": 5000
+  },
+  "finishedAt": "2026-07-01T19:39:59.480887Z",
+  "paths": {
+    "metadata": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_193959_run_scripted_pose_sequence_1207b462fe\\metadata.json",
+    "runDirectory": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_193959_run_scripted_pose_sequence_1207b462fe",
+    "steps": "C:\\Users\\Joseph\\AI_Train\\trainer-client\\runs\\20260701_193959_run_scripted_pose_sequence_1207b462fe\\steps.jsonl"
+  },
+  "runId": "20260701T193959Z-1207b462fe",
+  "scriptName": "run_scripted_pose_sequence",
+  "startedAt": "2026-07-01T19:39:59.465170Z",
+  "status": "success",
+  "summary": {
+    "averageReward": -0.001785039799999999,
+    "averageStepTimeMs": 2.1201199968345463,
+    "episodeId": 116,
+    "failureCount": 0,
+    "stepCount": 5,
+    "totalReward": -0.008925198999999995
+  }
+}
