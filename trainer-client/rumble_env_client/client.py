@@ -78,6 +78,9 @@ class RumbleEnvClient:
 
         return self.request({"type": "step", "action": action})
 
+    def debug_probe(self) -> Dict[str, Any]:
+        return self.request({"type": "debug_probe"})
+
     @staticmethod
     def _read_line(sock: socket.socket) -> str:
         buffer = bytearray()

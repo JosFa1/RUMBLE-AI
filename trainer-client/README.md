@@ -44,6 +44,7 @@ python scripts/probe_reset.py
 python scripts/probe_step_once.py
 python scripts/probe_step_sequence.py
 python scripts/probe_reward_sequence.py
+python scripts/probe_debug.py
 ```
 
 What they prove:
@@ -54,6 +55,7 @@ What they prove:
 - `probe_step_once.py`: one safe action returns a reward plus post-step observation
 - `probe_step_sequence.py`: repeated actions advance the episode step cleanly
 - `probe_reward_sequence.py`: reachable targets score better than bad targets and reward stays finite
+- `probe_debug.py`: the local exploration hook can inspect likely summon/kick/camera entry points and save the report
 
 Rollout scripts:
 

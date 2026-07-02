@@ -36,6 +36,9 @@ When working on this project, follow this loop:
 6. Rerun the affected checks until the behavior is stable.
 7. Only mark a goal complete when the requirement is verified in practice.
 
+If the running game or launcher blocks verification, it is acceptable to close
+RUMBLE and relaunch it as part of the test loop before repeating the checks.
+
 ## Verification rule
 
 Code that looks correct is not enough. A milestone is only complete when the
@@ -94,4 +97,3 @@ A milestone is done only when:
 - the run artifacts are saved and parse cleanly
 - the runtime log shows the expected bridge behavior
 - the README or protocol docs reflect the current workflow
-

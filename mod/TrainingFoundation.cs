@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using Il2CppInterop.Runtime.Injection;
 using MelonLoader;
 using MelonLoader.Utils;
 using UnityEngine;
@@ -13,7 +14,6 @@ using UnityObject = UnityEngine.Object;
 using UnitySceneManager = UnityEngine.SceneManagement.SceneManager;
 
 namespace AI_Train;
-
 internal sealed class TrainingFoundation : IDisposable
 {
     private const string TrainingSceneName = "AI_Train_Training";
@@ -57,16 +57,21 @@ internal sealed class TrainingFoundation : IDisposable
     private TrainingEnvironmentManager _trainingEnvironmentManager;
     private ObservationBuilder _observationBuilder;
     private ActionExecutor _actionExecutor;
+    private TrainingRuntimeHost _runtimeHost;
+    private TrainingMonitorCamera _monitorCamera;
+    private TrainingExplorationService _explorationService;
     private TrainingBridgeServer _bridgeServer;
     private string _logRoot;
     private string _dumpRoot;
     private string _logFilePath;
     private StreamWriter _writer;
     private float _nextScanTime;
+    private float _nextBootstrapCleanupTime;
     private DateTime _initializedAtUtc;
     private bool _initialScanComplete;
     private bool _gymTransitionAttempted;
     private bool _gymTransitionSucceeded;
+    private DateTime _lastGymTransitionAttemptUtc;
     private string _lastActiveSceneName;
     private SceneCandidate _bestPlayerCandidate;
 
@@ -86,11 +91,15 @@ internal sealed class TrainingFoundation : IDisposable
         _trainingEnvironmentManager = new TrainingEnvironmentManager(LogInfo, LogWarn, LogError);
         _observationBuilder = new ObservationBuilder(LogInfo, LogWarn);
         _actionExecutor = new ActionExecutor(_trainingEnvironmentManager, LogInfo, LogWarn);
-        _bridgeServer = new TrainingBridgeServer(_trainingEnvironmentManager, _observationBuilder, _actionExecutor, LogInfo, LogWarn, LogError);
+        _runtimeHost = CreateRuntimeHost();
+        _monitorCamera = new TrainingMonitorCamera(LogInfo, LogWarn);
+        _monitorCamera.EnsureCreated("initialize");
+        _explorationService = new TrainingExplorationService(_runtimeHost, _monitorCamera, LogInfo, LogWarn, LogError);
+        _bridgeServer = new TrainingBridgeServer(_trainingEnvironmentManager, _observationBuilder, _actionExecutor, _explorationService, LogInfo, LogWarn, LogError);
 
         LogInfo("AI_Train bootstrap initialized.");
         LogInfo($"Log file: {_logFilePath}");
-        LogInfo("Hotkeys: F7 = dump active scenes, F8 = force training scene build, F9 = rescan all, F11 = dump observation.");
+        LogInfo("Hotkeys: F6 = toggle monitor camera free-fly, F7 = dump active scenes, F8 = force training scene build, F9 = rescan all, F10 = force gym load, F11 = dump observation, F12 = run debug probe.");
 
         ScanAllScenes("initialize");
     }
@@ -100,6 +109,11 @@ internal sealed class TrainingFoundation : IDisposable
         if (Input.GetKeyDown(KeyCode.F7))
         {
             ScanAllScenes("manual-dump");
+        }
+
+        if (Input.GetKeyDown(KeyCode.F6))
+        {
+            _monitorCamera?.ToggleFreeFly("manual-toggle");
         }
 
         if (Input.GetKeyDown(KeyCode.F8))
@@ -122,8 +136,22 @@ internal sealed class TrainingFoundation : IDisposable
             PublishObservation("manual-observation");
         }
 
+        if (Input.GetKeyDown(KeyCode.F12))
+        {
+            PublishDebugProbe("manual-debug-probe");
+        }
+
+        _monitorCamera?.UpdateTarget(_trainingEnvironmentManager?.CurrentPlayerRoot);
+
         _trainingEnvironmentManager?.UpdateTelemetry(Time.frameCount, Time.unscaledTime);
         _bridgeServer?.Pump();
+
+        if ((_trainingEnvironmentManager?.IsReady ?? false) &&
+            Time.unscaledTime >= _nextBootstrapCleanupTime)
+        {
+            _nextBootstrapCleanupTime = Time.unscaledTime + 1.0f;
+            TryUnloadBootstrapScenes("bootstrap-enforcement");
+        }
 
         if (Time.unscaledTime >= _nextScanTime)
         {
@@ -151,11 +179,13 @@ internal sealed class TrainingFoundation : IDisposable
     public void OnLateUpdate()
     {
         _actionExecutor?.Pump(Time.unscaledDeltaTime);
+        _monitorCamera?.Tick(Time.unscaledDeltaTime);
     }
 
     public void OnSceneWasLoaded(int buildIndex, string sceneName)
     {
         LogInfo($"Melon scene callback loaded: {sceneName} ({buildIndex})");
+        TryUnloadBootstrapScenes($"loaded:{sceneName}");
         ScanAllScenes($"melon-loaded:{sceneName}");
     }
 
@@ -183,6 +213,7 @@ internal sealed class TrainingFoundation : IDisposable
         var scenes = GetLoadedScenes();
         var reports = new List<SceneReport>(scenes.Count);
         var currentBest = _bestPlayerCandidate;
+        var currentBestGymCandidate = null as SceneCandidate;
         var detailed = reason.StartsWith("manual", StringComparison.OrdinalIgnoreCase) ||
                        reason.StartsWith("initialize", StringComparison.OrdinalIgnoreCase) ||
                        reason.Contains("loaded", StringComparison.OrdinalIgnoreCase) ||
@@ -194,19 +225,40 @@ internal sealed class TrainingFoundation : IDisposable
             var report = AnalyzeScene(scene, detailed || !_seenScenes.Contains(scene.name));
             reports.Add(report);
             currentBest = PickBetterCandidate(currentBest, report.BestPlayerCandidate);
+            if (report.IsGymLike)
+            {
+                currentBestGymCandidate = PickBetterCandidate(currentBestGymCandidate, report.BestPlayerCandidate);
+            }
             _seenScenes.Add(scene.name);
         }
 
-        _bestPlayerCandidate = currentBest;
+        _bestPlayerCandidate = currentBestGymCandidate ?? currentBest;
         _initialScanComplete = true;
         _lastActiveSceneName = UnitySceneManager.GetActiveScene().name;
 
         WriteSceneBundle(reason, reports, _bestPlayerCandidate);
 
+        var hasGymScene = HasGymLikeScene(reports);
+
+        if (!hasGymScene)
+        {
+            if (_trainingEnvironmentManager?.IsReady ?? false)
+            {
+                TryUnloadBootstrapScenes(reason);
+                return;
+            }
+
+            LogInfo($"Gym-like scene not yet loaded ({reason}); requesting gym transition and deferring training scene build.");
+            TryForceGymLoad(reason);
+            return;
+        }
+
         if (AutoBuildTrainingScene && !(_trainingEnvironmentManager?.IsReady ?? false) && _bestPlayerCandidate != null)
         {
             TryBuildTrainingScene(reason);
         }
+
+        TryUnloadBootstrapScenes(reason);
     }
 
     private List<Scene> GetLoadedScenes()
@@ -251,6 +303,7 @@ internal sealed class TrainingFoundation : IDisposable
             SceneName = scene.name,
             BuildIndex = scene.buildIndex,
             IsActive = scene == UnitySceneManager.GetActiveScene(),
+            IsGymLike = IsGymLikeScene(scene.name, roots),
             RootCount = rootObjects.Length,
             Roots = roots.OrderByDescending(r => r.Score).ToList(),
             BestPlayerCandidate = bestCandidate
@@ -581,14 +634,27 @@ internal sealed class TrainingFoundation : IDisposable
 
     private void TryForceGymLoad(string reason)
     {
-        if (_gymTransitionAttempted)
+        if (_gymTransitionSucceeded)
+        {
+            return;
+        }
+
+        if (_gymTransitionAttempted && DateTime.UtcNow - _lastGymTransitionAttemptUtc < TimeSpan.FromSeconds(10))
         {
             return;
         }
 
         _gymTransitionAttempted = true;
+        _lastGymTransitionAttemptUtc = DateTime.UtcNow;
 
         LogInfo($"Attempting gym transition ({reason}).");
+
+        if (TryLoadGymSceneFromBuildSettings(reason))
+        {
+            LogInfo("Gym load requested from build settings.");
+            return;
+        }
+
         var targetTypes = new[]
         {
             "RUMBLE.Managers.SceneManager",
@@ -633,9 +699,229 @@ internal sealed class TrainingFoundation : IDisposable
             }
         }
 
+        if (TryInvokeGymTransitionFromComponentSweep())
+        {
+            _gymTransitionSucceeded = true;
+            LogInfo("Gym transition invocation succeeded via component sweep.");
+            return;
+        }
+
         LogWarn("Gym transition attempt did not find a callable method.");
     }
 
+    private bool TryLoadGymSceneFromBuildSettings(string reason)
+    {
+        var buildSceneCount = UnitySceneManager.sceneCountInBuildSettings;
+        if (buildSceneCount <= 0)
+        {
+            LogWarn($"Build-settings gym load skipped ({reason}): no build scenes reported.");
+            return false;
+        }
+
+        var candidates = new List<(int Index, string Path, string Name, int Score)>();
+        for (var i = 0; i < buildSceneCount; i++)
+        {
+            string path;
+            try
+            {
+                path = SceneUtility.GetScenePathByBuildIndex(i);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                continue;
+            }
+
+            var name = Path.GetFileNameWithoutExtension(path);
+            var score = 0;
+            var lowered = $"{name} {path}".ToLowerInvariant();
+            if (lowered.Contains("gym"))
+            {
+                score += 1000;
+            }
+            if (lowered.Contains("arena"))
+            {
+                score += 500;
+            }
+            if (lowered.Contains("practice"))
+            {
+                score += 250;
+            }
+            if (lowered.Contains("training"))
+            {
+                score += 200;
+            }
+            if (lowered.Contains("loading") || lowered.Contains("boot"))
+            {
+                score -= 250;
+            }
+
+            candidates.Add((i, path, name, score));
+        }
+
+        if (candidates.Count == 0)
+        {
+            LogWarn($"Build-settings gym load skipped ({reason}): no scene paths could be resolved.");
+            return false;
+        }
+
+        foreach (var candidate in candidates.OrderByDescending(candidate => candidate.Score).ThenBy(candidate => candidate.Index))
+        {
+            LogInfo($"Build scene candidate: index={candidate.Index} name={candidate.Name} score={candidate.Score} path={candidate.Path}");
+        }
+
+        var gymCandidate = candidates
+            .OrderByDescending(candidate => candidate.Score)
+            .ThenBy(candidate => candidate.Index)
+            .FirstOrDefault();
+
+        if (gymCandidate.Path == null)
+        {
+            return false;
+        }
+
+        if (gymCandidate.Score <= 0)
+        {
+            LogWarn($"Build-settings gym load skipped ({reason}): no obvious gym scene found in build settings.");
+            return false;
+        }
+
+        try
+        {
+            LogInfo($"Loading build scene index {gymCandidate.Index} ({gymCandidate.Name}) for gym bootstrap.");
+            UnitySceneManager.LoadScene(gymCandidate.Index, LoadSceneMode.Single);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LogWarn($"Direct gym load failed for scene index {gymCandidate.Index} ({gymCandidate.Name}): {ex.Message}");
+            return false;
+        }
+    }
+
+    private void TryUnloadBootstrapScenes(string reason)
+    {
+        if (!(_trainingEnvironmentManager?.IsReady ?? false))
+        {
+            return;
+        }
+
+        var trainingScene = _trainingEnvironmentManager.CurrentTrainingScene;
+        if ((!trainingScene.IsValid() || !trainingScene.isLoaded) &&
+            !string.IsNullOrWhiteSpace(_trainingEnvironmentManager.CurrentTrainingScene.name))
+        {
+            var freshTrainingScene = UnitySceneManager.GetSceneByName(_trainingEnvironmentManager.CurrentTrainingScene.name);
+            if (freshTrainingScene.IsValid() && freshTrainingScene.isLoaded)
+            {
+                trainingScene = freshTrainingScene;
+            }
+        }
+
+        var bootstrapScenes = new List<Scene>();
+
+        var loaderScene = UnitySceneManager.GetSceneByName("Loader");
+        if (loaderScene.IsValid() && loaderScene.isLoaded)
+        {
+            bootstrapScenes.Add(loaderScene);
+        }
+
+        if (bootstrapScenes.Count == 0)
+        {
+            var scenes = GetLoadedScenes();
+            bootstrapScenes = scenes
+                .Where(IsBootstrapScene)
+                .ToList();
+        }
+
+        if (bootstrapScenes.Count == 0)
+        {
+            return;
+        }
+
+        if (trainingScene.IsValid() && UnitySceneManager.GetActiveScene() != trainingScene)
+        {
+            try
+            {
+                UnitySceneManager.SetActiveScene(trainingScene);
+                LogInfo($"Re-asserted training scene as active before bootstrap unload ({reason}).");
+            }
+            catch (Exception ex)
+            {
+                LogWarn($"Failed to re-assert training scene as active ({reason}): {ex.Message}");
+            }
+        }
+
+        foreach (var scene in bootstrapScenes)
+        {
+            if (trainingScene.IsValid() && scene == trainingScene)
+            {
+                continue;
+            }
+
+            StripBootstrapScene(scene, reason);
+
+            try
+            {
+                LogInfo($"Unloading bootstrap scene '{scene.name}' ({scene.buildIndex}) ({reason}).");
+                UnitySceneManager.UnloadSceneAsync(scene);
+                UnitySceneManager.UnloadSceneAsync(scene.name);
+                if (scene.buildIndex >= 0)
+                {
+                    UnitySceneManager.UnloadSceneAsync(scene.buildIndex);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogWarn($"Failed to unload bootstrap scene '{scene.name}' ({reason}): {ex.Message}");
+            }
+        }
+    }
+
+    private void StripBootstrapScene(Scene scene, string reason)
+    {
+        if (!scene.IsValid() || !scene.isLoaded)
+        {
+            return;
+        }
+
+        GameObject[] roots;
+        try
+        {
+            roots = scene.GetRootGameObjects();
+        }
+        catch (Exception ex)
+        {
+            LogWarn($"Failed to enumerate bootstrap roots for scene '{scene.name}' ({reason}): {ex.Message}");
+            return;
+        }
+
+        if (roots == null || roots.Length == 0)
+        {
+            return;
+        }
+
+        foreach (var root in roots)
+        {
+            if (root == null)
+            {
+                continue;
+            }
+
+            try
+            {
+                LogInfo($"Destroying bootstrap root '{root.name}' from scene '{scene.name}' ({reason}).");
+                UnityObject.Destroy(root);
+            }
+            catch (Exception ex)
+            {
+                LogWarn($"Failed to destroy bootstrap root '{root.name}' from scene '{scene.name}' ({reason}): {ex.Message}");
+            }
+        }
+    }
     private static Type FindLoadedType(string fullName)
     {
         foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
@@ -1206,6 +1492,54 @@ internal sealed class TrainingFoundation : IDisposable
         return methods[0];
     }
 
+    private bool TryInvokeGymTransitionFromComponentSweep()
+    {
+        Component[] components;
+        try
+        {
+            components = Resources.FindObjectsOfTypeAll<Component>();
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (components == null || components.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var component in components)
+        {
+            if (component == null)
+            {
+                continue;
+            }
+
+            var type = component.GetType();
+            if (type == null)
+            {
+                continue;
+            }
+
+            var fullName = type.FullName ?? type.Name ?? string.Empty;
+            if (fullName.IndexOf("SceneManager", StringComparison.OrdinalIgnoreCase) < 0 &&
+                fullName.IndexOf("BootLoader", StringComparison.OrdinalIgnoreCase) < 0 &&
+                fullName.IndexOf("Gym", StringComparison.OrdinalIgnoreCase) < 0 &&
+                fullName.IndexOf("Arena", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                continue;
+            }
+
+            if (TryInvokeGymTransition(type, component))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private void TryBuildTrainingScene(string reason)
     {
         if (_trainingEnvironmentManager?.IsReady ?? false)
@@ -1307,6 +1641,8 @@ internal sealed class TrainingFoundation : IDisposable
         WriteJson($"training_status_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json", _trainingEnvironmentManager.GetStatus());
         _bridgeServer?.StartIfNeeded();
         _bridgeServer?.Pump();
+        _gymTransitionSucceeded = true;
+        LogInfo("Gym source confirmed and training scene is now the bootstrap target.");
         if (!managerInitialized)
         {
             LogWarn("TrainingEnvironmentManager reported an initialization failure after the training scene was built.");
@@ -1339,6 +1675,29 @@ internal sealed class TrainingFoundation : IDisposable
         }
     }
 
+    private void PublishDebugProbe(string reason)
+    {
+        if (_trainingEnvironmentManager == null || _explorationService == null)
+        {
+            LogWarn($"Debug probe skipped ({reason}): manager or exploration service unavailable.");
+            return;
+        }
+
+        try
+        {
+            LogInfo($"Building debug probe snapshot ({reason}).");
+            var probe = _explorationService.BuildDebugProbe(_trainingEnvironmentManager, reason);
+            WriteJson($"debug_probe_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json", probe);
+            LogInfo(
+                $"Debug probe snapshot written ({reason}). sceneReady={probe.sceneReady} playerRootFound={probe.playerRootFound} " +
+                $"probeHostReady={probe.probeHostReady} targets={probe.types?.Count ?? 0} warnings={probe.warnings?.Count ?? 0}.");
+        }
+        catch (Exception ex)
+        {
+            LogError($"Debug probe failed ({reason}): {ex.Message}");
+        }
+    }
+
     private static Scene GetOrCreateTrainingScene()
     {
         var existing = UnitySceneManager.GetSceneByName(TrainingSceneName);
@@ -1348,6 +1707,15 @@ internal sealed class TrainingFoundation : IDisposable
         }
 
         return UnitySceneManager.CreateScene(TrainingSceneName);
+    }
+
+    private static TrainingRuntimeHost CreateRuntimeHost()
+    {
+        ClassInjector.RegisterTypeInIl2Cpp<TrainingRuntimeHost>();
+        var hostObject = new GameObject("AI_Train_RuntimeHost");
+        hostObject.hideFlags = HideFlags.DontSaveInBuild | HideFlags.DontSaveInEditor;
+        UnityEngine.Object.DontDestroyOnLoad(hostObject);
+        return hostObject.AddComponent<TrainingRuntimeHost>();
     }
 
     private GameObject FindPreferredTrainingActor(GameObject sourceRoot)
@@ -1452,21 +1820,64 @@ internal sealed class TrainingFoundation : IDisposable
     {
         foreach (var report in reports)
         {
-            if (report.SceneName != null && report.SceneName.IndexOf("gym", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (report.IsGymLike)
             {
                 return true;
-            }
-
-            foreach (var root in report.Roots)
-            {
-                if (root.Path != null && root.Path.IndexOf("gym", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    return true;
-                }
             }
         }
 
         return false;
+    }
+
+    private static bool IsGymLikeScene(string sceneName, IEnumerable<RootReport> roots)
+    {
+        if (!string.IsNullOrWhiteSpace(sceneName) &&
+            (sceneName.IndexOf("gym", StringComparison.OrdinalIgnoreCase) >= 0 ||
+             sceneName.IndexOf("arena", StringComparison.OrdinalIgnoreCase) >= 0 ||
+             sceneName.IndexOf("practice", StringComparison.OrdinalIgnoreCase) >= 0 ||
+             sceneName.IndexOf("training", StringComparison.OrdinalIgnoreCase) >= 0))
+        {
+            return true;
+        }
+
+        foreach (var root in roots)
+        {
+            if (root == null)
+            {
+                continue;
+            }
+
+            if ((root.Path != null && (
+                    root.Path.IndexOf("gym", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    root.Path.IndexOf("arena", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    root.Path.IndexOf("practice", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    root.Path.IndexOf("training", StringComparison.OrdinalIgnoreCase) >= 0)) ||
+                (root.Name != null && (
+                    root.Name.IndexOf("gym", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    root.Name.IndexOf("arena", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    root.Name.IndexOf("practice", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    root.Name.IndexOf("training", StringComparison.OrdinalIgnoreCase) >= 0)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsBootstrapScene(Scene scene)
+    {
+        if (!scene.IsValid())
+        {
+            return false;
+        }
+
+        var sceneName = scene.name ?? string.Empty;
+        return sceneName.IndexOf("loader", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               sceneName.IndexOf("bootloader", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               sceneName.IndexOf("calibration", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               sceneName.IndexOf("measurement", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               sceneName.IndexOf("intro", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     private void MoveRootIntoScene(GameObject root, Scene targetScene, List<string> movedRoots)
@@ -1621,6 +2032,7 @@ internal sealed class TrainingFoundation : IDisposable
         public string SceneName { get; set; }
         public int BuildIndex { get; set; }
         public bool IsActive { get; set; }
+        public bool IsGymLike { get; set; }
         public int RootCount { get; set; }
         public List<RootReport> Roots { get; set; }
         public RootReport BestPlayerCandidate { get; set; }
@@ -1649,3 +2061,9 @@ internal sealed class TrainingFoundation : IDisposable
         Environment = 3
     }
 }
+
+
+
+
+
+

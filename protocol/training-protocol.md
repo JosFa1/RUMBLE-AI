@@ -45,6 +45,7 @@ Implemented requests:
 - `get_observation`
 - `reset_episode`
 - `step`
+- `debug_probe`
 
 Examples:
 
@@ -72,6 +73,42 @@ Examples:
 ```
 
 `leftHandTargetLocal` and `rightHandTargetLocal` are expressed in player-root-local coordinates. `durationMs` is clamped to a safe maximum of `1000`.
+
+## Debug probe response
+
+Request:
+
+```json
+{"type":"debug_probe"}
+```
+
+Successful response:
+
+```json
+{
+  "type": "debug_probe_result",
+  "protocolVersion": "0.3",
+  "requestType": "debug_probe",
+  "sceneReady": true,
+  "playerRootFound": true,
+  "trainingSceneName": "AI_Train_Training",
+  "playerRootPath": "BootLoaderPlayer",
+  "probeHostReady": true,
+  "camera": {
+    "freeFlyEnabled": true,
+    "targetFound": true,
+    "targetPath": "BootLoaderPlayer/Head",
+    "cameraName": "AI_Train_MonitorCamera",
+    "cameraPosition": { "x": 0.0, "y": 2.0, "z": -6.0 },
+    "cameraRotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+  },
+  "types": [],
+  "warnings": [],
+  "error": null
+}
+```
+
+`debug_probe` is local-only and is intended for discovery work on the training scene. It returns a structured report of likely summon, kick, camera, and test-loop entry points, plus any coroutine-backed test sequence that was started.
 
 ## Response shape
 

@@ -25,9 +25,11 @@ internal sealed class TrainingBridgeServer : IDisposable
     private readonly TrainingEnvironmentManager _manager;
     private readonly ObservationBuilder _observationBuilder;
     private readonly ActionExecutor _actionExecutor;
+    private readonly TrainingExplorationService _explorationService;
     private readonly ConcurrentQueue<PendingObservationRequest> _observationRequests = new();
     private readonly ConcurrentQueue<PendingStepRequest> _stepRequests = new();
     private readonly ConcurrentQueue<PendingResetRequest> _resetRequests = new();
+    private readonly ConcurrentQueue<PendingDebugProbeRequest> _debugProbeRequests = new();
     private readonly object _gate = new();
     private readonly object _debugGate = new();
     private readonly JsonSerializerOptions _jsonOptions = new()
@@ -52,6 +54,7 @@ internal sealed class TrainingBridgeServer : IDisposable
         TrainingEnvironmentManager manager,
         ObservationBuilder observationBuilder,
         ActionExecutor actionExecutor,
+        TrainingExplorationService explorationService,
         Action<string> logInfo,
         Action<string> logWarn,
         Action<string> logError)
@@ -59,6 +62,7 @@ internal sealed class TrainingBridgeServer : IDisposable
         _manager = manager;
         _observationBuilder = observationBuilder;
         _actionExecutor = actionExecutor;
+        _explorationService = explorationService;
         _logInfo = logInfo ?? (_ => { });
         _logWarn = logWarn ?? (_ => { });
         _logError = logError ?? (_ => { });
@@ -133,6 +137,11 @@ internal sealed class TrainingBridgeServer : IDisposable
         while (_observationRequests.TryDequeue(out var pendingObservation))
         {
             ProcessPendingObservation(pendingObservation);
+        }
+
+        while (_debugProbeRequests.TryDequeue(out var pendingDebugProbe))
+        {
+            ProcessPendingDebugProbe(pendingDebugProbe);
         }
 
         MaybeLogDebugSummary("pump");
@@ -369,6 +378,14 @@ internal sealed class TrainingBridgeServer : IDisposable
                     return;
                 }
 
+                if (string.Equals(requestType, "debug_probe", StringComparison.OrdinalIgnoreCase))
+                {
+                    var responseJson = await RequestDebugProbeAsync(cancellationToken).ConfigureAwait(false);
+                    await writer.WriteLineAsync(responseJson).ConfigureAwait(false);
+                    MaybeLogDebugSummary("debug_probe");
+                    return;
+                }
+
                 _logWarn($"TrainingBridgeServer rejected unsupported request type '{requestType}'.");
                 RecordRequestOutcome(requestType ?? "unknown", "unknown_request_type", null);
                 await writer.WriteLineAsync(CreateErrorResponse(requestType ?? "unknown", "unknown_request_type", "Unknown request type.", new Dictionary<string, object>
@@ -511,6 +528,45 @@ internal sealed class TrainingBridgeServer : IDisposable
             pending.TrySetTimeout();
             RecordRequestOutcome("step", "step_timeout", null);
             return CreateStepErrorResponse("step", "step_timeout", "Step request timed out.");
+        }
+
+        return await pending.Completion.Task.ConfigureAwait(false);
+    }
+
+    private async Task<string> RequestDebugProbeAsync(CancellationToken cancellationToken)
+    {
+        if (_disposed)
+        {
+            _logWarn("TrainingBridgeServer rejected debug probe request: bridge disposed.");
+            RecordRequestOutcome("debug_probe", "bridge_disposed", null);
+            return CreateDebugProbeErrorResponse("debug_probe", "bridge_disposed", "Bridge is shutting down.");
+        }
+
+        if (_manager == null || !_manager.IsReady)
+        {
+            _logWarn("TrainingBridgeServer rejected debug probe request: scene not ready.");
+            RecordRequestOutcome("debug_probe", "scene_not_ready", null);
+            return CreateDebugProbeErrorResponse("debug_probe", "scene_not_ready", "Training scene is not ready.");
+        }
+
+        if (_explorationService == null)
+        {
+            _logWarn("TrainingBridgeServer rejected debug probe request: exploration service unavailable.");
+            RecordRequestOutcome("debug_probe", "exploration_unavailable", null);
+            return CreateDebugProbeErrorResponse("debug_probe", "exploration_unavailable", "Exploration service is unavailable.");
+        }
+
+        var pending = new PendingDebugProbeRequest();
+        _debugProbeRequests.Enqueue(pending);
+
+        var delayTask = Task.Delay(RequestTimeoutMilliseconds, cancellationToken);
+        var completed = await Task.WhenAny(pending.Completion.Task, delayTask).ConfigureAwait(false);
+        if (completed != pending.Completion.Task)
+        {
+            _logWarn("TrainingBridgeServer debug probe request timed out.");
+            pending.TrySetTimeout();
+            RecordRequestOutcome("debug_probe", "debug_probe_timeout", null);
+            return CreateDebugProbeErrorResponse("debug_probe", "debug_probe_timeout", "Debug probe request timed out.");
         }
 
         return await pending.Completion.Task.ConfigureAwait(false);
@@ -839,6 +895,69 @@ internal sealed class TrainingBridgeServer : IDisposable
         }
     }
 
+    private void ProcessPendingDebugProbe(PendingDebugProbeRequest pending)
+    {
+        if (pending == null || pending.IsCompleted)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_disposed)
+            {
+                pending.TrySetResult(CreateDebugProbeErrorResponse("debug_probe", "bridge_disposed", "Bridge is shutting down."));
+                RecordRequestOutcome("debug_probe", "bridge_disposed", null);
+                return;
+            }
+
+            if (_manager == null || !_manager.IsReady)
+            {
+                _logWarn("TrainingBridgeServer rejected debug probe request: scene not ready.");
+                pending.TrySetResult(CreateDebugProbeErrorResponse("debug_probe", "scene_not_ready", "Training scene is not ready."));
+                RecordRequestOutcome("debug_probe", "scene_not_ready", null);
+                return;
+            }
+
+            if (_explorationService == null)
+            {
+                _logWarn("TrainingBridgeServer rejected debug probe request: exploration service unavailable.");
+                pending.TrySetResult(CreateDebugProbeErrorResponse("debug_probe", "exploration_unavailable", "Exploration service is unavailable."));
+                RecordRequestOutcome("debug_probe", "exploration_unavailable", null);
+                return;
+            }
+
+            var probe = _explorationService.BuildDebugProbe(_manager, "bridge-debug_probe");
+            var payload = new TrainingBridgeDebugResponse
+            {
+                type = "debug_probe_result",
+                protocolVersion = TrainingProtocol.Version,
+                requestType = "debug_probe",
+                sceneReady = probe.sceneReady,
+                playerRootFound = probe.playerRootFound,
+                trainingSceneName = probe.trainingSceneName,
+                playerRootPath = probe.playerRootPath,
+                probeHostReady = probe.probeHostReady,
+                camera = probe.camera,
+                types = probe.types,
+                warnings = probe.warnings,
+                error = probe.error
+            };
+
+            pending.TrySetResult(JsonSerializer.Serialize(payload, _jsonOptions));
+            RecordRequestOutcome("debug_probe", null, null);
+        }
+        catch (Exception ex)
+        {
+            _logError($"TrainingBridgeServer debug probe failed: {ex.Message}");
+            pending.TrySetResult(CreateDebugProbeErrorResponse("debug_probe", "internal_error", "An unexpected bridge error occurred.", new Dictionary<string, object>
+            {
+                { "exception", ex.Message }
+            }));
+            RecordRequestOutcome("debug_probe", "internal_error", null);
+        }
+    }
+
     private RequestReadResult ReadRequest(StreamReader reader)
     {
         var builder = new StringBuilder();
@@ -1015,6 +1134,11 @@ internal sealed class TrainingBridgeServer : IDisposable
     }
 
     private string CreateStepErrorResponse(string requestType, string errorCode, string message, Dictionary<string, object> details = null)
+    {
+        return CreateErrorResponse(requestType, errorCode, message, details);
+    }
+
+    private string CreateDebugProbeErrorResponse(string requestType, string errorCode, string message, Dictionary<string, object> details = null)
     {
         return CreateErrorResponse(requestType, errorCode, message, details);
     }
@@ -1248,6 +1372,31 @@ internal sealed class TrainingBridgeServer : IDisposable
         {
             Started = true;
         }
+
+        public void TrySetResult(string json)
+        {
+            if (Interlocked.Exchange(ref _completed, 1) == 0)
+            {
+                _completion.TrySetResult(json);
+            }
+        }
+
+        public void TrySetTimeout()
+        {
+            if (Interlocked.Exchange(ref _completed, 1) == 0)
+            {
+                _completion.TrySetResult(string.Empty);
+            }
+        }
+    }
+
+    private sealed class PendingDebugProbeRequest
+    {
+        private readonly TaskCompletionSource<string> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _completed;
+
+        public TaskCompletionSource<string> Completion => _completion;
+        public bool IsCompleted => _completed != 0;
 
         public void TrySetResult(string json)
         {

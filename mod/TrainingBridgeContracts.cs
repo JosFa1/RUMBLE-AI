@@ -117,3 +117,46 @@ internal sealed class TrainingBridgeResetInfo
     public string rightHandPath { get; set; }
     public List<string> warnings { get; set; }
 }
+
+internal sealed class TrainingBridgeDebugResponse
+{
+    public string type { get; set; }
+    public string protocolVersion { get; set; }
+    public string requestType { get; set; }
+    public bool sceneReady { get; set; }
+    public bool playerRootFound { get; set; }
+    public string trainingSceneName { get; set; }
+    public string playerRootPath { get; set; }
+    public bool probeHostReady { get; set; }
+    public TrainingMonitorCameraState camera { get; set; }
+    public List<TrainingDebugTypeReport> types { get; set; }
+    public List<string> warnings { get; set; }
+    public TrainingBridgeErrorInfo error { get; set; }
+}
+
+internal sealed class TrainingMonitorCameraState
+{
+    public bool freeFlyEnabled { get; set; }
+    public bool targetFound { get; set; }
+    public string targetPath { get; set; }
+    public string cameraName { get; set; }
+    public ObservationVector3 cameraPosition { get; set; }
+    public ObservationQuaternion cameraRotation { get; set; }
+}
+
+internal sealed class TrainingDebugTypeReport
+{
+    public string typeName { get; set; }
+    public string assemblyName { get; set; }
+    public string instancePath { get; set; }
+    public List<string> methodCandidates { get; set; }
+    public List<TrainingDebugInvocationReport> invocations { get; set; }
+    public List<string> notes { get; set; }
+}
+
+internal sealed class TrainingDebugInvocationReport
+{
+    public string memberName { get; set; }
+    public string result { get; set; }
+    public string details { get; set; }
+}

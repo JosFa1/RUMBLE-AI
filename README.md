@@ -54,6 +54,7 @@ python scripts/probe_status.py
 python scripts/probe_observation.py
 python scripts/probe_reset.py
 python scripts/probe_step_once.py
+python scripts/probe_debug.py
 python scripts/run_scripted_pose_sequence.py
 python scripts/run_random_policy.py
 python scripts/run_bridge_stability.py --cycles 10 --steps-per-cycle 3

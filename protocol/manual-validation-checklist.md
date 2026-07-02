@@ -75,7 +75,15 @@ Use this checklist when you want to validate the bridge against a real RUMBLE se
 - Failure signs: missing observation fields, null payload, timeout
 - Likely fix area: `ObservationBuilder`, bridge observation queue, scene readiness
 
-## 10. Run probe_reset.py
+## 10. Run probe_debug.py
+
+- Command: `cd trainer-client && python scripts/probe_debug.py`
+- Expected output: JSON response with `type: "debug_probe_result"` and a camera/report payload
+- Expected mod log line: `Training debug probe started` plus candidate method logs for summon, kick, and camera hooks
+- Failure signs: `scene_not_ready`, empty type list, or no camera state
+- Likely fix area: `TrainingExplorationService`, `TrainingRuntimeHost`, monitor camera wiring
+
+## 11. Run probe_reset.py
 
 - Command: `cd trainer-client && python scripts/probe_reset.py`
 - Expected output: `reset_result` with `episodeStep: 0`
@@ -83,7 +91,7 @@ Use this checklist when you want to validate the bridge against a real RUMBLE se
 - Failure signs: reset error, stale episode step, hand reset warnings every run
 - Likely fix area: `ActionExecutor.ResetEpisodeState`, `TrainingEnvironmentManager.ResetEpisode`
 
-## 11. Run probe_step_once.py
+## 12. Run probe_step_once.py
 
 - Command: `cd trainer-client && python scripts/probe_step_once.py`
 - Expected output: `step_result` with finite `reward` and a nontrivial `info.elapsedMs`
@@ -91,7 +99,7 @@ Use this checklist when you want to validate the bridge against a real RUMBLE se
 - Failure signs: step returns almost instantly, reward is NaN, no observation after step
 - Likely fix area: `ActionExecutor`, `RewardCalculator`, `TrainingBridgeServer`
 
-## 12. Run run_scripted_pose_sequence.py
+## 13. Run run_scripted_pose_sequence.py
 
 - Command: `cd trainer-client && python scripts/run_scripted_pose_sequence.py --episode-length 5 --action-duration-ms 100`
 - Expected output: script exits `0`, reports distinct left/right paths, and finishes with `failureCount=0`
@@ -101,7 +109,7 @@ Use this checklist when you want to validate the bridge against a real RUMBLE se
 
 For a human-visible camera check, use `python scripts/run_scripted_pose_sequence.py --episode-length 10 --action-duration-ms 500`. Press `F6` to toggle follow/free-fly camera mode.
 
-## 13. Run run_random_policy.py
+## 14. Run run_random_policy.py
 
 - Command: `cd trainer-client && python scripts/run_random_policy.py --episodes 5 --episode-length 3 --seed 42`
 - Expected output: script exits `0` and writes a run folder with `steps.jsonl`
@@ -109,7 +117,7 @@ For a human-visible camera check, use `python scripts/run_scripted_pose_sequence
 - Failure signs: random action crashes, timeouts, malformed logs
 - Likely fix area: safe bounds config, step handling, JSONL logging
 
-## 14. Run run_bridge_stability.py with 10 cycles
+## 15. Run run_bridge_stability.py with 10 cycles
 
 - Command: `cd trainer-client && python scripts/run_bridge_stability.py --cycles 10 --steps-per-cycle 3`
 - Expected output: exit `0` and `cycles.jsonl` written
@@ -117,7 +125,7 @@ For a human-visible camera check, use `python scripts/run_scripted_pose_sequence
 - Failure signs: intermittent timeouts, reset hangs, socket failures
 - Likely fix area: bridge queueing, reset cancellation, step serialization
 
-## 15. Run run_bridge_stability.py with 100 cycles
+## 16. Run run_bridge_stability.py with 100 cycles
 
 - Command: `cd trainer-client && python scripts/run_bridge_stability.py --cycles 100 --steps-per-cycle 3`
 - Expected output: exit `0` with no accumulated failures or timeouts
@@ -125,7 +133,7 @@ For a human-visible camera check, use `python scripts/run_scripted_pose_sequence
 - Failure signs: late-cycle hangs, port exhaustion, memory growth, step time drift
 - Likely fix area: `TrainingBridgeServer`, connection cleanup, action completion flow
 
-## 16. Run run_full_validation.py
+## 17. Run run_full_validation.py
 
 - Command: `cd trainer-client && python scripts/run_full_validation.py`
 - Expected output: trailing `PASS` and a `validation_report.json` inside the run folder
@@ -133,7 +141,7 @@ For a human-visible camera check, use `python scripts/run_scripted_pose_sequence
 - Failure signs: failure exit codes, missing report, raw protocol checks failing
 - Likely fix area: error envelopes, request parsing, concurrent reset/step behavior
 
-## 17. Inspect JSONL logs
+## 18. Inspect JSONL logs
 
 - Command: inspect `trainer-client/runs/<run-id>/steps.jsonl` and `cycles.jsonl`
 - Expected output: one valid JSON object per line
@@ -141,7 +149,7 @@ For a human-visible camera check, use `python scripts/run_scripted_pose_sequence
 - Failure signs: truncated rows, mixed text and JSON, absolute user paths in metadata
 - Likely fix area: `trainer-client/rumble_env_client/logging.py`, script writers
 
-## 18. Confirm observations change after actions
+## 19. Confirm observations change after actions
 
 - Command: compare pre-step and post-step hand positions from probe and rollout logs
 - Expected output: hand positions move toward targets across successful steps
@@ -149,7 +157,7 @@ For a human-visible camera check, use `python scripts/run_scripted_pose_sequence
 - Failure signs: positions stay frozen, only one-frame nudges, identical observations across long steps
 - Likely fix area: `ActionExecutor.Pump`, step completion semantics, coordinate conversions
 
-## 19. Confirm reward is finite
+## 20. Confirm reward is finite
 
 - Command: inspect step responses and JSONL logs
 - Expected output: every reward is a finite number and `rewardBreakdown.totalReward` matches `reward`
@@ -157,7 +165,7 @@ For a human-visible camera check, use `python scripts/run_scripted_pose_sequence
 - Failure signs: NaN or Infinity in reward fields
 - Likely fix area: `RewardCalculator`, missing-hand handling, distance sanitization
 
-## 20. Confirm malformed requests do not crash the game
+## 21. Confirm malformed requests do not crash the game
 
 - Command: rely on `run_full_validation.py` or manually send malformed JSON over localhost
 - Expected output: bridge returns `type: "error"` with a protocol-safe error code
@@ -165,7 +173,7 @@ For a human-visible camera check, use `python scripts/run_scripted_pose_sequence
 - Failure signs: broken socket without error payload, game crash, listener stops responding
 - Likely fix area: `TrainingBridgeServer.ReadRequestAsync`, request parsing, client handler exception flow
 
-## 21. Confirm the game can close cleanly
+## 22. Confirm the game can close cleanly
 
 - Command: close RUMBLE after validation
 - Expected output: no hang during shutdown and no repeated dispose errors

@@ -39,7 +39,7 @@ EXPECTED_IGNORE_ENTRIES = {
     "*.user",
     "*.suo",
 }
-REQUEST_TYPES = {"status", "get_observation", "reset_episode", "step"}
+REQUEST_TYPES = {"status", "get_observation", "reset_episode", "step", "debug_probe"}
 TRACKED_GENERATED_PREFIXES = ("trainer-client/runs/", "mod/bin/", "mod/obj/")
 TEXT_SUFFIXES = {
     ".cs",
