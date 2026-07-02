@@ -15,8 +15,10 @@ if str(ROOT) not in sys.path:
 from rumble_env_client import (
     BridgeError,
     add_common_args,
+    clamped_test_action,
     create_client,
     create_run_logger,
+    easy_reward_action,
     load_runtime_config,
 )
 
@@ -78,22 +80,8 @@ def main() -> int:
         rewards: list[tuple[str, float | None]] = []
         failure_count = 0
         actions = [
-            (
-                "easy",
-                {
-                    "leftHandTargetLocal": [-0.18, 1.14, 0.42],
-                    "rightHandTargetLocal": [0.18, 1.14, 0.42],
-                    "durationMs": config.action_duration_ms,
-                },
-            ),
-            (
-                "impossible",
-                {
-                    "leftHandTargetLocal": [3.0, 3.0, 3.0],
-                    "rightHandTargetLocal": [3.0, 3.0, 3.0],
-                    "durationMs": config.action_duration_ms,
-                },
-            ),
+            ("easy", easy_reward_action(config)),
+            ("impossible", clamped_test_action(config)),
         ]
 
         for label, action in actions:

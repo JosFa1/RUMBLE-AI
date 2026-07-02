@@ -4,16 +4,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Iterable, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from rumble_env_client import BridgeError, add_common_args, create_client, load_runtime_config
-
-
-Action = Tuple[str, dict]
+from rumble_env_client import BridgeError, add_common_args, create_client, load_runtime_config, scripted_pose_sequence
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,43 +23,6 @@ def print_json(label: str, payload: dict) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 
-def build_actions(duration_ms: int) -> Iterable[Action]:
-    return [
-        (
-            "neutral",
-            {
-                "leftHandTargetLocal": [-0.2, 1.1, 0.35],
-                "rightHandTargetLocal": [0.2, 1.1, 0.35],
-                "durationMs": duration_ms,
-            },
-        ),
-        (
-            "forward",
-            {
-                "leftHandTargetLocal": [-0.2, 1.05, 0.85],
-                "rightHandTargetLocal": [0.2, 1.05, 0.85],
-                "durationMs": duration_ms,
-            },
-        ),
-        (
-            "up",
-            {
-                "leftHandTargetLocal": [-0.2, 1.45, 0.35],
-                "rightHandTargetLocal": [0.2, 1.45, 0.35],
-                "durationMs": duration_ms,
-            },
-        ),
-        (
-            "apart",
-            {
-                "leftHandTargetLocal": [-0.55, 1.1, 0.35],
-                "rightHandTargetLocal": [0.55, 1.1, 0.35],
-                "durationMs": duration_ms,
-            },
-        ),
-    ]
-
-
 def main() -> int:
     args = parse_args()
     config = load_runtime_config(args)
@@ -74,7 +33,7 @@ def main() -> int:
         print_json("status", client.status())
         print_json("observation", client.get_observation())
 
-        for label, action in build_actions(config.action_duration_ms):
+        for label, action in scripted_pose_sequence(config.action_duration_ms)[:-1]:
             response = client.step(action)
             print_json(f"step:{label}", response)
             info = response.get("info")

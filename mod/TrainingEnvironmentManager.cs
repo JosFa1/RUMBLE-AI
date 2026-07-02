@@ -188,13 +188,19 @@ internal sealed class TrainingEnvironmentManager
                 type = "status_result",
                 protocolVersion = TrainingProtocol.Version,
                 requestType = "status",
+                bridgeRunning = false,
                 sceneReady = _isReady,
+                sourceSceneName = _sourceSceneName,
                 trainingSceneName = _currentTrainingSceneName,
+                actorName = _currentPlayerRootName,
+                playerRootPath = _currentPlayerRootPath,
                 playerRootFound = _playerRootFound,
                 episodeId = _currentEpisodeId,
                 episodeStep = _currentEpisodeStepCount,
                 tick = _lastTick,
                 timeSeconds = _lastTimeSeconds,
+                lastRequestType = null,
+                lastReward = null,
                 lastError = _lastError,
                 error = null
             };
@@ -300,13 +306,19 @@ internal sealed class TrainingBridgeStatus
     public string type { get; set; }
     public string protocolVersion { get; set; }
     public string requestType { get; set; }
+    public bool bridgeRunning { get; set; }
     public bool sceneReady { get; set; }
+    public string sourceSceneName { get; set; }
     public string trainingSceneName { get; set; }
+    public string actorName { get; set; }
+    public string playerRootPath { get; set; }
     public bool playerRootFound { get; set; }
     public int episodeId { get; set; }
     public int episodeStep { get; set; }
     public int tick { get; set; }
     public float timeSeconds { get; set; }
+    public string lastRequestType { get; set; }
+    public float? lastReward { get; set; }
     public string lastError { get; set; }
     public TrainingBridgeErrorInfo error { get; set; }
 }

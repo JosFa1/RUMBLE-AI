@@ -1,0 +1,166 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Dict, Iterable
+
+from .config import TrainerClientConfig
+
+
+def yes_no(value: Any) -> str:
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if value is None:
+        return "unknown"
+    return str(value)
+
+
+def error_message(response: Dict[str, Any] | None) -> str | None:
+    if not isinstance(response, dict):
+        return None
+    error = response.get("error")
+    if isinstance(error, dict):
+        code = error.get("code")
+        message = error.get("message")
+        if code and message:
+            return f"{code}: {message}"
+        if message:
+            return str(message)
+        if code:
+            return str(code)
+    if isinstance(error, str) and error:
+        return error
+    return None
+
+
+def format_vector(value: Any) -> str:
+    if not isinstance(value, dict):
+        return "missing"
+    parts = []
+    for axis in ("x", "y", "z"):
+        item = value.get(axis)
+        if isinstance(item, (int, float)):
+            parts.append(f"{axis}={item:.3f}")
+        else:
+            parts.append(f"{axis}=?")
+    return " ".join(parts)
+
+
+def observation_payload(response_or_observation: Dict[str, Any]) -> Dict[str, Any] | None:
+    if not isinstance(response_or_observation, dict):
+        return None
+    observation = response_or_observation.get("observation")
+    if isinstance(observation, dict):
+        return observation
+    if "sceneReady" in response_or_observation or "episodeStep" in response_or_observation:
+        return response_or_observation
+    return None
+
+
+def status_lines(status: Dict[str, Any] | None, config: TrainerClientConfig, last_log: Path | None = None) -> list[str]:
+    status = status if isinstance(status, dict) else {}
+    return [
+        f"Bridge: {'connected' if status else 'disconnected'}",
+        f"Host: {config.host}",
+        f"Port: {config.port}",
+        f"Protocol: expected {config.protocol_version}, server {status.get('protocolVersion', 'unknown')}",
+        f"Bridge running: {yes_no(status.get('bridgeRunning'))}",
+        f"Scene ready: {yes_no(status.get('sceneReady'))}",
+        f"Player root found: {yes_no(status.get('playerRootFound'))}",
+        f"Source scene: {status.get('sourceSceneName') or 'unknown'}",
+        f"Training scene: {status.get('trainingSceneName') or 'unknown'}",
+        f"Actor: {status.get('actorName') or status.get('playerRootPath') or 'unknown'}",
+        f"Episode id: {status.get('episodeId', 'unknown')}",
+        f"Episode step: {status.get('episodeStep', 'unknown')}",
+        f"Tick: {status.get('tick', 'unknown')}",
+        f"Time seconds: {status.get('timeSeconds', 'unknown')}",
+        f"Last request: {status.get('lastRequestType', 'unknown')}",
+        f"Last reward: {status.get('lastReward', 'unknown')}",
+        f"Last error: {status.get('lastError') or error_message(status) or 'none'}",
+        f"Last run log: {last_log if last_log else 'none'}",
+    ]
+
+
+def observation_lines(response_or_observation: Dict[str, Any]) -> list[str]:
+    observation = observation_payload(response_or_observation)
+    if observation is None:
+        return ["Observation: missing"]
+    required = ["protocolVersion", "tick", "timeSeconds", "sceneReady", "episodeId", "episodeStep"]
+    missing = [name for name in required if name not in observation]
+    warnings = observation.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    return [
+        f"Protocol: {observation.get('protocolVersion', 'unknown')}",
+        f"Tick: {observation.get('tick', 'unknown')}",
+        f"Time seconds: {observation.get('timeSeconds', 'unknown')}",
+        f"Scene ready: {yes_no(observation.get('sceneReady'))}",
+        f"Episode id: {observation.get('episodeId', 'unknown')}",
+        f"Episode step: {observation.get('episodeStep', 'unknown')}",
+        f"Root position: {format_vector(observation.get('rootPosition'))}",
+        f"Head position: {format_vector(observation.get('headPosition'))}",
+        f"Left hand position: {format_vector(observation.get('leftHandPosition'))}",
+        f"Right hand position: {format_vector(observation.get('rightHandPosition'))}",
+        f"Health: {observation.get('health', 'unknown')}",
+        f"Warnings: {len(warnings)}" + (f" - {'; '.join(str(item) for item in warnings[:3])}" if warnings else ""),
+        f"Missing required fields: {', '.join(missing) if missing else 'none'}",
+    ]
+
+
+def step_lines(response: Dict[str, Any], action_label: str = "step") -> list[str]:
+    info = response.get("info") if isinstance(response, dict) else None
+    if not isinstance(info, dict):
+        info = {}
+    lines = [
+        f"Action: {action_label}",
+        f"Reward: {response.get('reward', 'missing')}",
+        f"Elapsed ms: {info.get('elapsedMs', 'missing')}",
+        f"Action applied: {yes_no(info.get('actionApplied'))}",
+        f"Left hand found: {yes_no(info.get('leftHandFound'))}",
+        f"Right hand found: {yes_no(info.get('rightHandFound'))}",
+        f"Target clamping: left={yes_no(info.get('leftTargetClamped'))} right={yes_no(info.get('rightTargetClamped'))}",
+        f"Distances: left {info.get('leftDistanceBefore', 'missing')} -> {info.get('leftDistanceAfter', 'missing')}; right {info.get('rightDistanceBefore', 'missing')} -> {info.get('rightDistanceAfter', 'missing')}",
+        f"Blocked reason: {info.get('blockedReason') or 'none'}",
+        f"Hand positions changed: {hand_positions_changed(response)}",
+        f"Terminated: {yes_no(response.get('terminated'))}",
+        f"Truncated: {yes_no(response.get('truncated'))}",
+        f"Error: {error_message(response) or 'none'}",
+    ]
+    return lines
+
+
+def hand_positions_changed(response: Dict[str, Any]) -> str:
+    info = response.get("info") if isinstance(response, dict) else None
+    if not isinstance(info, dict):
+        return "unknown"
+    changed = []
+    for side in ("left", "right"):
+        before = info.get(f"{side}DistanceBefore")
+        after = info.get(f"{side}DistanceAfter")
+        if isinstance(before, (int, float)) and isinstance(after, (int, float)):
+            changed.append(after < before)
+    if not changed:
+        return "unknown"
+    return "true" if any(changed) else "false"
+
+
+def config_lines(config: TrainerClientConfig) -> list[str]:
+    return [
+        f"Config path: {config.source_path}",
+        f"host: {config.host}",
+        f"port: {config.port}",
+        f"timeoutMs: {config.timeout_ms}",
+        f"episodeLength: {config.episode_length}",
+        f"actionDurationMs: {config.action_duration_ms}",
+        f"logDirectory: {config.log_directory}",
+        f"protocolVersion: {config.protocol_version}",
+        f"strictProtocolVersion: {config.strict_protocol_version}",
+        f"safeHandBounds: {json.dumps(config.safe_hand_bounds.to_dict(), separators=(',', ':'))}",
+    ]
+
+
+def print_lines(lines: Iterable[str]) -> None:
+    for line in lines:
+        print(line)

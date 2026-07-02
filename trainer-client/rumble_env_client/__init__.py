@@ -12,8 +12,19 @@ from .config import (
     load_config,
     make_client,
     sample_safe_action,
+    save_config,
 )
 from .logging import RunLogger, create_run_logger
+from .actions import (
+    clamped_test_action,
+    easy_reward_action,
+    milestone_pose_sequence,
+    neutral_action,
+    random_safe_action,
+    safe_test_action,
+    scripted_pose_sequence,
+    stability_cycle_actions,
+)
 
 __all__ = [
     "AxisBounds",
@@ -31,5 +42,14 @@ __all__ = [
     "load_config",
     "load_runtime_config",
     "make_client",
+    "clamped_test_action",
+    "easy_reward_action",
+    "milestone_pose_sequence",
+    "neutral_action",
+    "random_safe_action",
+    "safe_test_action",
     "sample_safe_action",
+    "save_config",
+    "scripted_pose_sequence",
+    "stability_cycle_actions",
 ]

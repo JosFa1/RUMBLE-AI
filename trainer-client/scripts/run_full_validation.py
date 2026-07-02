@@ -17,6 +17,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from rumble_env_client.client import BridgeError
+from rumble_env_client.actions import clamped_test_action
 from rumble_env_client.config import load_runtime_config, add_common_args, sample_safe_action
 from rumble_env_client.logging import create_run_logger
 
@@ -306,11 +307,7 @@ def main() -> int:
     if info.get("rightHandFound") and "rightDistanceAfter" not in info:
         return finalize_failure(logger, report_path, report, EXIT_ACTION_FAILURE, "action_failure", "Safe step info was missing rightDistanceAfter.")
 
-    clamped_action = {
-        "leftHandTargetLocal": [3.0, 3.0, 3.0],
-        "rightHandTargetLocal": [3.0, 3.0, 3.0],
-        "durationMs": config.action_duration_ms,
-    }
+    clamped_action = clamped_test_action(config)
     try:
         clamped_response = client.step(clamped_action)
     except BridgeError as exc:

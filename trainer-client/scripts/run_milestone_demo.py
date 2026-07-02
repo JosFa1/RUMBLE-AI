@@ -6,16 +6,13 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from rumble_env_client import BridgeError, RumbleEnv, add_common_args, create_run_logger, load_runtime_config
-
-
-Action = Tuple[str, Dict[str, Any]]
+from rumble_env_client import BridgeError, RumbleEnv, add_common_args, create_run_logger, load_runtime_config, milestone_pose_sequence
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,43 +20,6 @@ def parse_args() -> argparse.Namespace:
     add_common_args(parser, include_action_duration=True)
     parser.add_argument("--steps", type=int, default=8, help="Number of scripted steps to run.")
     return parser.parse_args()
-
-
-def build_demo_sequence(duration_ms: int) -> Iterable[Action]:
-    return [
-        (
-            "neutral",
-            {
-                "leftHandTargetLocal": [-0.2, 1.1, 0.35],
-                "rightHandTargetLocal": [0.2, 1.1, 0.35],
-                "durationMs": duration_ms,
-            },
-        ),
-        (
-            "forward",
-            {
-                "leftHandTargetLocal": [-0.2, 1.04, 0.82],
-                "rightHandTargetLocal": [0.2, 1.04, 0.82],
-                "durationMs": duration_ms,
-            },
-        ),
-        (
-            "up",
-            {
-                "leftHandTargetLocal": [-0.2, 1.42, 0.35],
-                "rightHandTargetLocal": [0.2, 1.42, 0.35],
-                "durationMs": duration_ms,
-            },
-        ),
-        (
-            "apart",
-            {
-                "leftHandTargetLocal": [-0.52, 1.1, 0.35],
-                "rightHandTargetLocal": [0.52, 1.1, 0.35],
-                "durationMs": duration_ms,
-            },
-        ),
-    ]
 
 
 def _format_vector(value: Any) -> str:
@@ -86,7 +46,7 @@ def main() -> int:
     total_reward = 0.0
     step_count = 0
     step_time_ms_total = 0.0
-    sequence = list(build_demo_sequence(config.action_duration_ms))
+    sequence = list(milestone_pose_sequence(config.action_duration_ms))
 
     try:
         status = env.status()

@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from rumble_env_client import BridgeError, add_common_args, create_client, create_run_logger, load_runtime_config
+from rumble_env_client import BridgeError, add_common_args, create_client, create_run_logger, load_runtime_config, random_safe_action
 
 
 def parse_args() -> argparse.Namespace:
@@ -59,11 +59,7 @@ def main() -> int:
             episode_failures = 0
 
             for _ in range(max(1, config.episode_length)):
-                action = {
-                    "leftHandTargetLocal": config.safe_hand_bounds.sample_left(rng),
-                    "rightHandTargetLocal": config.safe_hand_bounds.sample_right(rng),
-                    "durationMs": config.action_duration_ms,
-                }
+                action = random_safe_action(config, rng)
 
                 started_at = time.perf_counter()
                 response = client.step(action)

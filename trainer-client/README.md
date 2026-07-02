@@ -1,6 +1,6 @@
 # trainer-client
 
-`trainer-client` is the Python side of the RUMBLE training bridge. It talks to the mod over plain TCP on `127.0.0.1:8765` by default, using one newline-delimited JSON request per connection and one JSON response per connection.
+`trainer-client` is the Python side of the RUMBLE training bridge. It talks to the mod over plain TCP on `127.0.0.1:8765` by default, using one newline-delimited JSON request per connection and one JSON response per connection. The recommended human-facing app is `scripts/operator_console.py`.
 
 ## Setup
 
@@ -27,6 +27,24 @@ Runtime settings live in `config.json`. The client reads:
 
 `strictProtocolVersion=false` is the default. When the server reports a different protocol version, the client warns once instead of crashing. Set it to `true` if you want mismatches to fail hard.
 
+## Operator console
+
+Start the operator app from this folder:
+
+```powershell
+python scripts/operator_console.py
+```
+
+Useful option:
+
+```powershell
+python scripts/operator_console.py --verbose
+```
+
+`--verbose` prints raw JSON after the concise summaries. The default keeps output compact so the operator can see status, readiness, player-root state, rewards, errors, and run-log paths without digging through large payloads.
+
+The console menu can connect and status-check, get observations, reset, send one safe step, run a scripted pose sequence, run a random policy test, run a short stability test, run offline or full validation, show config, edit basic config, print the latest run folder, and show troubleshooting help.
+
 ## Start the bridge
 
 1. Launch RUMBLE with the mod installed.
@@ -38,6 +56,7 @@ Runtime settings live in `config.json`. The client reads:
 Probe scripts:
 
 ```powershell
+python scripts/operator_console.py
 python scripts/probe_status.py
 python scripts/probe_observation.py
 python scripts/probe_reset.py
@@ -93,6 +112,22 @@ Run logs are written under `runs/` with one folder per execution. Each run folde
 - `validation_report.json`: full-validation-only report
 
 Paths stored in metadata are relative to `trainer-client/`, so generated logs no longer embed user-specific absolute paths.
+
+## Status fields
+
+- `sceneReady`: the mod has built the runtime training scene.
+- `playerRootFound`: actor discovery found the player root accepted for training.
+- `protocolVersion`: server protocol version; expected client value is in `config.json`.
+- `episodeId` and `episodeStep`: current episode counters.
+- `lastError`: last manager or bridge error exposed by the mod when available.
+
+## Common errors
+
+- Connection refused: RUMBLE is not running, the mod did not load, or the bridge is not listening on the configured host and port.
+- Protocol mismatch: config, docs, schemas, and mod code are not aligned on `0.3`.
+- `sceneReady=false`: the training scene has not been built yet.
+- `playerRootFound=false`: the actor locator did not find a suitable player root.
+- Timeout: the bridge accepted a request but the game did not complete the work within the configured timeout.
 
 ## Offline validation
 

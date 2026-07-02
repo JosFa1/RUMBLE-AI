@@ -7,13 +7,13 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable
+from typing import Any, Dict
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from rumble_env_client import BridgeError, add_common_args, create_client, create_run_logger, load_runtime_config
+from rumble_env_client import BridgeError, add_common_args, create_client, create_run_logger, load_runtime_config, stability_cycle_actions
 
 
 def parse_args() -> argparse.Namespace:
@@ -82,35 +82,6 @@ def is_timeout_code(code: str | None) -> bool:
     if not code:
         return False
     return code.endswith("_timeout") or code == "timeout"
-
-
-def build_cycle_actions(duration_ms: int, cycle_index: int) -> Iterable[tuple[str, Dict[str, Any]]]:
-    neutral = {
-        "leftHandTargetLocal": [-0.2, 1.1, 0.35],
-        "rightHandTargetLocal": [0.2, 1.1, 0.35],
-        "durationMs": duration_ms,
-    }
-    forward = {
-        "leftHandTargetLocal": [-0.2, 1.05, 0.85],
-        "rightHandTargetLocal": [0.2, 1.05, 0.85],
-        "durationMs": duration_ms,
-    }
-    up = {
-        "leftHandTargetLocal": [-0.2, 1.45, 0.35],
-        "rightHandTargetLocal": [0.2, 1.45, 0.35],
-        "durationMs": duration_ms,
-    }
-    apart = {
-        "leftHandTargetLocal": [-0.55, 1.1, 0.35],
-        "rightHandTargetLocal": [0.55, 1.1, 0.35],
-        "durationMs": duration_ms,
-    }
-
-    patterns = [
-        [("neutral", neutral), ("forward", forward), ("up", up)],
-        [("neutral", neutral), ("apart", apart), ("neutral", neutral)],
-    ]
-    return patterns[cycle_index % len(patterns)]
 
 
 def main() -> int:
@@ -203,7 +174,7 @@ def main() -> int:
                     f"resetMode={reset_response.get('resetMode')} sceneReady={reset_response.get('sceneReady')}"
                 )
 
-                for step_index, (label, action) in enumerate(build_cycle_actions(config.action_duration_ms, cycle_index), start=1):
+                for step_index, (label, action) in enumerate(stability_cycle_actions(config.action_duration_ms, cycle_index), start=1):
                     if step_index > max(1, args.steps_per_cycle):
                         break
 

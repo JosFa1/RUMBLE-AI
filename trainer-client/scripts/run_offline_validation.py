@@ -22,6 +22,7 @@ MOD_DIR = REPO_DIR / "mod"
 EXPECTED_IGNORE_ENTRIES = {
     "trainer-client/runs/*",
     "!trainer-client/runs/.gitkeep",
+    "**/__pycache__/",
     "trainer-client/**/__pycache__/",
     "__pycache__/",
     "*.pyc",
@@ -38,6 +39,11 @@ EXPECTED_IGNORE_ENTRIES = {
     "obj/",
     "*.user",
     "*.suo",
+    "*.tmp",
+    "*.bak",
+    "*.log",
+    "*.jsonl",
+    "training_status_*.json",
 }
 REQUEST_TYPES = {"status", "get_observation", "reset_episode", "step", "debug_probe"}
 TRACKED_GENERATED_PREFIXES = ("trainer-client/runs/", "mod/bin/", "mod/obj/")
@@ -97,6 +103,16 @@ def import_python_file(path: Path) -> None:
     importlib.import_module(module_name)
 
 
+def has_main_entry_point(path: Path) -> bool:
+    text = path.read_text(encoding="utf-8")
+    return 'if __name__ == "__main__"' in text and "raise SystemExit(main())" in text
+
+
+def stale_protocol_mentions(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    return set(re.findall(r"(?:protocol version|Protocol v|Current version:|Version = \")\s*([0-9]+\.[0-9]+)", text, re.IGNORECASE))
+
+
 def main() -> int:
     args = parse_args()
     results: list[dict[str, object]] = []
@@ -139,6 +155,29 @@ def main() -> int:
         ) and isinstance(sample_action["durationMs"], int)
         record(results, "sample_action_schema", sample_valid, "Validated sample action against schema expectations")
 
+    protocol_sources = {
+        "config": {config.protocol_version},
+        "mod": stale_protocol_mentions(MOD_DIR / "TrainingProtocol.cs"),
+        "protocol_doc": stale_protocol_mentions(PROTOCOL_DIR / "training-protocol.md"),
+        "response_schema": {"0.3"} if (PROTOCOL_DIR / "schemas" / "response-v0.3.json").exists() else set(),
+        "observation_schema": {"0.3"} if (PROTOCOL_DIR / "schemas" / "observation-v0.3.json").exists() else set(),
+        "action_schema": {"0.3"} if (PROTOCOL_DIR / "schemas" / "action-v0.3.json").exists() else set(),
+    }
+    version_ok = all("0.3" in versions for versions in protocol_sources.values())
+    stale_versions = {
+        name: sorted(version for version in versions if version != "0.3")
+        for name, versions in protocol_sources.items()
+        if any(version != "0.3" for version in versions)
+    }
+    record(
+        results,
+        "protocol_version_consistency",
+        version_ok and not stale_versions,
+        "All protocol sources use 0.3"
+        if version_ok and not stale_versions
+        else f"Protocol versions: {protocol_sources}; stale: {stale_versions}",
+    )
+
     gitignore_path = REPO_DIR / ".gitignore"
     gitignore_text = gitignore_path.read_text(encoding="utf-8") if gitignore_path.exists() else ""
     missing_ignores = sorted(entry for entry in EXPECTED_IGNORE_ENTRIES if entry not in gitignore_text)
@@ -161,6 +200,46 @@ def main() -> int:
         "readme_commands",
         not missing_commands,
         "All referenced script commands exist" if not missing_commands else "; ".join(missing_commands),
+    )
+
+    operator_script = ROOT_DIR / "scripts" / "operator_console.py"
+    project_map = REPO_DIR / "docs" / "project-map.md"
+    operator_docs = []
+    for doc_path in [REPO_DIR / "README.md", ROOT_DIR / "README.md", project_map]:
+        if doc_path.exists() and "operator_console.py" in doc_path.read_text(encoding="utf-8"):
+            operator_docs.append(str(doc_path.relative_to(REPO_DIR)))
+    record(
+        results,
+        "operator_entry_point",
+        operator_script.exists() and len(operator_docs) == 3,
+        f"operator_console.py exists and docs mention it: {', '.join(operator_docs)}",
+    )
+
+    script_files = sorted((ROOT_DIR / "scripts").glob("*.py"))
+    scripts_without_main = [path.name for path in script_files if not has_main_entry_point(path)]
+    record(
+        results,
+        "script_main_entry_points",
+        not scripts_without_main,
+        "All scripts have main entry points" if not scripts_without_main else ", ".join(scripts_without_main),
+    )
+
+    help_failures: list[str] = []
+    for script_path in script_files:
+        completed = subprocess.run(
+            [sys.executable, str(script_path), "--help"],
+            cwd=ROOT_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if completed.returncode != 0:
+            help_failures.append(f"{script_path.name}: {completed.returncode}")
+    record(
+        results,
+        "script_help",
+        not help_failures,
+        "All scripts exit cleanly on --help" if not help_failures else "; ".join(help_failures),
     )
 
     protocol_text = (PROTOCOL_DIR / "training-protocol.md").read_text(encoding="utf-8")

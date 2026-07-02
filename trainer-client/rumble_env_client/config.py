@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import random
 import argparse
+import shutil
+from datetime import datetime, timezone
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
@@ -202,6 +204,19 @@ def load_config(config_path: str | Path | None = None) -> TrainerClientConfig:
 
     config = TrainerClientConfig.from_mapping(raw)
     return config.with_overrides(source_path=str(path))
+
+
+def save_config(config: TrainerClientConfig, config_path: str | Path | None = None) -> Path:
+    path = Path(config_path or config.source_path or DEFAULT_CONFIG_PATH)
+    if not path.is_absolute():
+        path = (ROOT_DIR / path).resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        backup_path = path.with_name(f"{path.name}.{stamp}.bak")
+        shutil.copy2(path, backup_path)
+    path.write_text(json.dumps(config.to_dict(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return path
 
 
 def apply_overrides(

@@ -129,6 +129,12 @@ Protocol failures use:
 - `error.message`
 - `error.details` when available
 
+## Required and optional fields
+
+Required response fields are defined by `protocol/schemas/response-v0.3.json`. Required observation fields are defined by `protocol/schemas/observation-v0.3.json`. Required action fields are defined by `protocol/schemas/action-v0.3.json`.
+
+The Python client and operator tolerate missing optional fields, but validation treats missing required fields as a protocol failure. Optional fields may be `null` when the game rig does not expose the corresponding data, such as health or hand transforms.
+
 ## Status response
 
 Request:
@@ -144,19 +150,25 @@ Response:
   "type": "status_result",
   "protocolVersion": "0.3",
   "requestType": "status",
+  "bridgeRunning": true,
   "sceneReady": true,
+  "sourceSceneName": "Gym",
   "trainingSceneName": "AI_Train_Training",
+  "actorName": "Player Controller(Clone)",
+  "playerRootPath": "Player Controller(Clone)",
   "playerRootFound": true,
   "episodeId": 7,
   "episodeStep": 0,
   "tick": 12345,
   "timeSeconds": 12.3456,
+  "lastRequestType": "status",
+  "lastReward": null,
   "lastError": null,
   "error": null
 }
 ```
 
-`status` is a snapshot of cached bridge and environment state. It does not touch Unity objects outside the manager’s cached telemetry.
+`status` is a snapshot of cached bridge and environment state. It includes bridge telemetry for the most recent request and does not touch Unity objects outside the manager's cached telemetry.
 
 ## Observation response
 

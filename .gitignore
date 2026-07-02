@@ -1,5 +1,6 @@
 trainer-client/runs/*
 !trainer-client/runs/.gitkeep
+**/__pycache__/
 trainer-client/**/__pycache__/
 __pycache__/
 *.pyc
@@ -16,5 +17,11 @@ bin/
 obj/
 *.user
 *.suo
+*.tmp
+*.bak
 *.log
+*.jsonl
 training_status_*.json
+validation_report*.json
+.idea/
+.vscode/

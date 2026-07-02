@@ -1,12 +1,39 @@
 # AI_Train
 
-AI_Train is the current RUMBLE training bridge project. The mod hosts a localhost TCP bridge inside the game, and the `trainer-client` folder contains Python probes, rollout scripts, and validation tooling for that bridge.
+AI_Train is the current RUMBLE training bridge project. The mod hosts a localhost TCP bridge inside the game, and the `trainer-client` folder contains the human-facing operator console, Python probes, rollout scripts, and validation tooling for that bridge.
+
+## Quick Start
+
+From the repository root:
+
+```powershell
+.\run_operator.ps1
+```
+
+Or run it directly:
+
+```powershell
+cd trainer-client
+python scripts/operator_console.py
+```
+
+The console is the recommended operator app. It can check bridge status, show observation summaries, reset, send a safe step, run scripted and random tests, run validation, edit basic config, and print the latest run folder path.
+
+## What do I run?
+
+Run `python scripts/operator_console.py` for normal human operation. Use the individual probe scripts only when debugging a specific endpoint or reproducing a narrow failure.
 
 ## Project layout
 
 - `mod/`: the MelonLoader mod project that builds `AI_Train.dll`
-- `trainer-client/`: Python client, probes, rollout scripts, and validation scripts
+- `trainer-client/`: Python operator console, client package, probes, rollout scripts, validation scripts, config, and run logs
 - `protocol/`: transport documentation, schemas, and the manual validation checklist
+- `docs/project-map.md`: short architecture map of the current workspace
+- `docs/cleanup-report.md`: cleanup status, retained scripts, ignored files, and next phase notes
+
+## Current status
+
+The project is an environment and validation bridge, not an ML training stack. The operator console is the main app, protocol version `0.3` is current, generated runs are ignored, and offline validation should pass without RUMBLE running. Full validation still requires a live RUMBLE session with the mod bridge listening on loopback.
 
 ## Build the mod
 
@@ -50,6 +77,7 @@ Expected result:
 From `trainer-client/`:
 
 ```powershell
+python scripts/operator_console.py
 python scripts/probe_status.py
 python scripts/probe_observation.py
 python scripts/probe_reset.py
@@ -80,12 +108,34 @@ python scripts/run_full_validation.py
 
 The full manual operator flow lives in `protocol/manual-validation-checklist.md`.
 
+## Inspect logs
+
+The operator console prints the latest run folder path. Generated logs live under `trainer-client/runs/` and are ignored by git except for `.gitkeep`.
+
+## Troubleshooting
+
+- If the console reports connection refused, start RUMBLE with the mod installed and wait for `TrainingBridgeServer listening on 127.0.0.1:8765`.
+- If `sceneReady=false`, wait for the Gym scene setup or inspect `TrainingEnvironmentManager` log lines.
+- If `playerRootFound=false`, inspect actor discovery in `TrainingActorLocator` and the current scene logs.
+- If protocol warnings appear, keep the mod, `trainer-client/config.json`, docs, and schemas aligned on protocol `0.3`.
+
 ## Known limitations
 
 - The bridge is single-scene, single-actor, and single-step-at-a-time.
 - Reset remains a partial actor reset; the player root is preserved.
 - Reward shaping is meant for bridge validation, not final training quality.
 - Live game validation still depends on a local RUMBLE install and a working mod loader environment.
+
+## What not to do yet
+
+- Do not add PyTorch, Gymnasium, self-play, or model training code.
+- Do not widen the protocol without updating the mod, client, docs, schemas, and validation together.
+- Do not treat offline validation as proof that the live game bridge works.
+- Do not commit generated run folders, build output, cache files, or local backups.
+
+## Next recommended work
+
+Run full validation from the operator against a live RUMBLE session, then do a narrow live-informed mod cleanup pass focused on debug logging, transform lookup caching, and response-creation consistency.
 
 ## What “done” means for this stage
 

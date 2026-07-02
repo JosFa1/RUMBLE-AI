@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from rumble_env_client import BridgeError, add_common_args, create_client, create_run_logger, load_runtime_config
+from rumble_env_client import BridgeError, add_common_args, create_client, create_run_logger, load_runtime_config, scripted_pose_sequence
 
 
 Action = Tuple[str, Dict[str, Any]]
@@ -23,51 +23,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a repeatable scripted pose sequence against the RUMBLE bridge.")
     add_common_args(parser, include_episode_length=True, include_action_duration=True)
     return parser.parse_args()
-
-
-def build_sequence(duration_ms: int) -> Iterable[Action]:
-    return [
-        (
-            "neutral",
-            {
-                "leftHandTargetLocal": [-0.2, 1.1, 0.35],
-                "rightHandTargetLocal": [0.2, 1.1, 0.35],
-                "durationMs": duration_ms,
-            },
-        ),
-        (
-            "forward",
-            {
-                "leftHandTargetLocal": [-0.2, 1.05, 0.85],
-                "rightHandTargetLocal": [0.2, 1.05, 0.85],
-                "durationMs": duration_ms,
-            },
-        ),
-        (
-            "up",
-            {
-                "leftHandTargetLocal": [-0.2, 1.45, 0.35],
-                "rightHandTargetLocal": [0.2, 1.45, 0.35],
-                "durationMs": duration_ms,
-            },
-        ),
-        (
-            "apart",
-            {
-                "leftHandTargetLocal": [-0.55, 1.1, 0.35],
-                "rightHandTargetLocal": [0.55, 1.1, 0.35],
-                "durationMs": duration_ms,
-            },
-        ),
-        (
-            "neutral",
-            {
-                "leftHandTargetLocal": [-0.2, 1.1, 0.35],
-                "rightHandTargetLocal": [0.2, 1.1, 0.35],
-                "durationMs": duration_ms,
-            },
-        ),
-    ]
 
 
 def maybe_distances(response: Dict[str, Any]) -> str:
@@ -152,7 +107,7 @@ def main() -> int:
         episode_id = int(reset_response.get("episodeId", 0))
         print(f"Reset episodeId={episode_id} resetMode={reset_response.get('resetMode')} runDir={logger.run_dir}")
 
-        sequence = list(build_sequence(config.action_duration_ms))
+        sequence = list(scripted_pose_sequence(config.action_duration_ms))
         repeats = max(1, math.ceil(config.episode_length / len(sequence)))
 
         for repeat_index in range(repeats):

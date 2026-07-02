@@ -324,20 +324,27 @@ internal sealed class TrainingBridgeServer : IDisposable
                         type = "status_result",
                         protocolVersion = TrainingProtocol.Version,
                         requestType = "status",
+                        bridgeRunning = IsRunning,
                         sceneReady = false,
+                        sourceSceneName = null,
                         trainingSceneName = null,
+                        actorName = null,
+                        playerRootPath = null,
                         playerRootFound = false,
                         episodeId = 0,
                         episodeStep = 0,
                         tick = 0,
                         timeSeconds = 0,
+                        lastRequestType = null,
+                        lastReward = null,
                         lastError = "manager_unavailable",
                         error = null
                     };
+                    RecordRequestOutcome("status", null, null);
+                    ApplyBridgeTelemetry(payload);
 
                     var response = JsonSerializer.Serialize(payload, _jsonOptions);
                     await writer.WriteLineAsync(response).ConfigureAwait(false);
-                    RecordRequestOutcome("status", null, null);
                     MaybeLogDebugSummary("status");
                     _logInfo("TrainingBridgeServer served status request.");
                     return;
@@ -1251,16 +1258,23 @@ internal sealed class TrainingBridgeServer : IDisposable
             type = "status_result",
             protocolVersion = TrainingProtocol.Version,
             requestType = "status",
+            bridgeRunning = IsRunning,
             sceneReady = false,
+            sourceSceneName = null,
             trainingSceneName = null,
+            actorName = null,
+            playerRootPath = null,
             playerRootFound = false,
             episodeId = 0,
             episodeStep = 0,
             tick = 0,
             timeSeconds = 0,
+            lastRequestType = null,
+            lastReward = null,
             lastError = null,
             error = null
         };
+        ApplyBridgeTelemetry(status);
 
         var rewardText = reward.HasValue
             ? reward.Value.ToString("0.###", CultureInfo.InvariantCulture)
@@ -1276,6 +1290,32 @@ internal sealed class TrainingBridgeServer : IDisposable
             $"lastRequestType={requestType} " +
             $"lastReward={rewardText} " +
             $"lastError={errorCode ?? status.lastError ?? "none"}");
+    }
+
+    private void ApplyBridgeTelemetry(TrainingBridgeStatus status)
+    {
+        if (status == null)
+        {
+            return;
+        }
+
+        string requestType;
+        string errorCode;
+        float? reward;
+        lock (_debugGate)
+        {
+            requestType = _lastRequestType;
+            errorCode = _lastErrorCode;
+            reward = _lastReward;
+        }
+
+        status.bridgeRunning = IsRunning;
+        status.lastRequestType = requestType ?? "none";
+        status.lastReward = reward;
+        if (!string.IsNullOrWhiteSpace(errorCode))
+        {
+            status.lastError = errorCode;
+        }
     }
 
     private static bool TryParseRequestType(string requestText, out string requestType, out string error)
