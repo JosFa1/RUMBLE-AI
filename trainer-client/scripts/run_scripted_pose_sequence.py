@@ -94,6 +94,46 @@ def reward_value(response: Dict[str, Any]) -> float:
     return 0.0
 
 
+def validate_step_response(response: Dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    info = response.get("info")
+    if not isinstance(info, dict):
+        return ["step response is missing info"]
+
+    left_path = info.get("leftHandPath")
+    right_path = info.get("rightHandPath")
+    if not left_path or not right_path:
+        errors.append("one or both hand paths are missing")
+    elif left_path == right_path:
+        errors.append(f"left and right hands alias the same transform: {left_path}")
+
+    already_at_target = bool(info.get("reachedLeftTarget") and info.get("reachedRightTarget"))
+    if not info.get("actionApplied") and not already_at_target:
+        errors.append("actionApplied is false")
+    if info.get("leftMovementBlocked") or info.get("rightMovementBlocked"):
+        errors.append(f"movement blocked: {info.get('blockedReason')}")
+
+    for side in ("left", "right"):
+        before = info.get(f"{side}DistanceBefore")
+        after = info.get(f"{side}DistanceAfter")
+        if (
+            isinstance(before, (int, float))
+            and isinstance(after, (int, float))
+            and before > 0.02
+            and after >= before - 1e-4
+        ):
+            errors.append(f"{side} hand made no target progress ({before:.4f} -> {after:.4f})")
+
+    observation = response.get("observation")
+    if isinstance(observation, dict):
+        left_position = observation.get("leftHandPosition")
+        right_position = observation.get("rightHandPosition")
+        if isinstance(left_position, dict) and left_position == right_position:
+            errors.append("left and right observed hand positions are identical")
+
+    return errors
+
+
 def main() -> int:
     args = parse_args()
     config = load_runtime_config(args)
@@ -136,6 +176,9 @@ def main() -> int:
 
                 if response.get("error"):
                     failure_count += 1
+                validation_errors = validate_step_response(response)
+                if validation_errors:
+                    failure_count += 1
 
                 logger.record_step(
                     episode_id=episode_id,
@@ -147,7 +190,7 @@ def main() -> int:
                     terminated=bool(response.get("terminated", False)),
                     truncated=bool(response.get("truncated", False)),
                     info=response.get("info"),
-                    error=response.get("error"),
+                    error=response.get("error") or ("; ".join(validation_errors) if validation_errors else None),
                     step_time_ms=elapsed_ms,
                 )
 
@@ -155,6 +198,8 @@ def main() -> int:
                     f"repeat={repeat_index + 1} step={step_count} pose={label} reward={reward_value(response):.6f} "
                     f"{maybe_distances(response)} stepTimeMs={elapsed_ms:.2f}"
                 )
+                if validation_errors:
+                    print(f"  validation: {'; '.join(validation_errors)}")
 
                 if response.get("terminated") or response.get("truncated"):
                     break

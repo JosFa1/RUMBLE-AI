@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import socket
+import warnings
 from dataclasses import dataclass
 from typing import Any, Dict
 
@@ -21,6 +22,8 @@ class RumbleEnvClient:
     port: int = DEFAULT_PORT
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     protocol_version: str | None = None
+    strict_protocol_version: bool = False
+    _warned_protocol_mismatch: bool = False
 
     def request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         raw_request = json.dumps(payload, separators=(",", ":")) + "\n"
@@ -51,9 +54,12 @@ class RumbleEnvClient:
         if expected_version:
             observed_version = response.get("protocolVersion")
             if observed_version != expected_version:
-                raise BridgeError(
-                    f"Protocol mismatch: expected {expected_version}, got {observed_version}."
-                )
+                message = f"Protocol mismatch: expected {expected_version}, got {observed_version}."
+                if self.strict_protocol_version:
+                    raise BridgeError(message)
+                if not self._warned_protocol_mismatch:
+                    warnings.warn(message, RuntimeWarning, stacklevel=2)
+                    self._warned_protocol_mismatch = True
 
         return response
 

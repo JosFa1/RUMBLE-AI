@@ -17,6 +17,7 @@ internal sealed class TrainingBridgeServer : IDisposable
     private const int DefaultPort = 8765;
     private const string DefaultHost = "127.0.0.1";
     private const int RequestTimeoutMilliseconds = 5000;
+    private const int MaxRequestCharacters = 16384;
 
     private readonly Action<string> _logInfo;
     private readonly Action<string> _logWarn;
@@ -41,6 +42,7 @@ internal sealed class TrainingBridgeServer : IDisposable
     private CancellationTokenSource _cts;
     private bool _started;
     private bool _disposed;
+    private PendingStepRequest _activeStepRequest;
     private string _lastRequestType;
     private string _lastErrorCode;
     private float? _lastReward;
@@ -126,10 +128,7 @@ internal sealed class TrainingBridgeServer : IDisposable
             ProcessPendingReset(pendingReset);
         }
 
-        while (_stepRequests.TryDequeue(out var pendingStep))
-        {
-            ProcessPendingStep(pendingStep);
-        }
+        ProcessPendingStep();
 
         while (_observationRequests.TryDequeue(out var pendingObservation))
         {
@@ -249,7 +248,45 @@ internal sealed class TrainingBridgeServer : IDisposable
                 };
 
                 string requestType = null;
-                var requestText = await ReadRequestAsync(reader, cancellationToken).ConfigureAwait(false);
+                var readTask = Task.Run(() => ReadRequest(reader), cancellationToken);
+                _ = readTask.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+                var readTimeoutTask = Task.Delay(RequestTimeoutMilliseconds, cancellationToken);
+                var completedRead = await Task.WhenAny(readTask, readTimeoutTask).ConfigureAwait(false);
+                if (completedRead != readTask)
+                {
+                    _logWarn("TrainingBridgeServer rejected timed out request.");
+                    RecordRequestOutcome("unknown", "request_timeout", null);
+                    try
+                    {
+                        client.Close();
+                    }
+                    catch
+                    {
+                        // best effort
+                    }
+
+                    await writer.WriteLineAsync(CreateErrorResponse("unknown", "request_timeout", "Request read timed out.")).ConfigureAwait(false);
+                    return;
+                }
+
+                var readResult = await readTask.ConfigureAwait(false);
+                if (readResult.Status == RequestReadStatus.Timeout)
+                {
+                    _logWarn("TrainingBridgeServer rejected timed out request.");
+                    RecordRequestOutcome("unknown", "request_timeout", null);
+                    await writer.WriteLineAsync(CreateErrorResponse("unknown", "request_timeout", "Request read timed out.")).ConfigureAwait(false);
+                    return;
+                }
+
+                if (readResult.Status == RequestReadStatus.TooLarge)
+                {
+                    _logWarn("TrainingBridgeServer rejected oversized request.");
+                    RecordRequestOutcome("unknown", "request_too_large", null);
+                    await writer.WriteLineAsync(CreateErrorResponse("unknown", "request_too_large", "Request body exceeded the maximum allowed size.")).ConfigureAwait(false);
+                    return;
+                }
+
+                var requestText = readResult.Content;
                 if (string.IsNullOrWhiteSpace(requestText))
                 {
                     _logWarn("TrainingBridgeServer rejected empty request.");
@@ -275,7 +312,9 @@ internal sealed class TrainingBridgeServer : IDisposable
                 {
                     var payload = _manager?.GetBridgeStatus() ?? new TrainingBridgeStatus
                     {
+                        type = "status_result",
                         protocolVersion = TrainingProtocol.Version,
+                        requestType = "status",
                         sceneReady = false,
                         trainingSceneName = null,
                         playerRootFound = false,
@@ -283,7 +322,8 @@ internal sealed class TrainingBridgeServer : IDisposable
                         episodeStep = 0,
                         tick = 0,
                         timeSeconds = 0,
-                        lastError = "manager_unavailable"
+                        lastError = "manager_unavailable",
+                        error = null
                     };
 
                     var response = JsonSerializer.Serialize(payload, _jsonOptions);
@@ -513,6 +553,7 @@ internal sealed class TrainingBridgeServer : IDisposable
             {
                 type = "observation",
                 protocolVersion = TrainingProtocol.Version,
+                requestType = "get_observation",
                 observation = observation,
                 error = null
             };
@@ -584,6 +625,24 @@ internal sealed class TrainingBridgeServer : IDisposable
                 return;
             }
 
+            if (_activeStepRequest != null && !_activeStepRequest.IsCompleted)
+            {
+                _activeStepRequest.TrySetResult(CreateStepErrorResponse("step", "step_canceled_by_reset", "Step request was canceled by reset.", CreateErrorDetails("resetReason", "step_canceled_by_reset")));
+                RecordRequestOutcome("step", "step_canceled_by_reset", null);
+                _activeStepRequest = null;
+            }
+
+            while (_stepRequests.TryDequeue(out var canceledStep))
+            {
+                if (canceledStep == null || canceledStep.IsCompleted)
+                {
+                    continue;
+                }
+
+                canceledStep.TrySetResult(CreateStepErrorResponse("step", "step_canceled_by_reset", "Step request was canceled by reset.", CreateErrorDetails("resetReason", "step_canceled_by_reset")));
+                RecordRequestOutcome("step", "step_canceled_by_reset", null);
+            }
+
             if (!_manager.ResetEpisode("bridge-reset"))
             {
                 _logWarn("TrainingBridgeServer reset request failed: manager rejected reset.");
@@ -610,6 +669,7 @@ internal sealed class TrainingBridgeServer : IDisposable
             {
                 type = "reset_result",
                 protocolVersion = TrainingProtocol.Version,
+                requestType = "reset_episode",
                 episodeId = status.CurrentEpisodeId,
                 observation = observation,
                 sceneReady = status.SceneReady,
@@ -644,10 +704,23 @@ internal sealed class TrainingBridgeServer : IDisposable
         }
     }
 
-    private void ProcessPendingStep(PendingStepRequest pending)
+    private void ProcessPendingStep()
     {
-        if (pending == null || pending.IsCompleted)
+        if (_activeStepRequest == null && !_stepRequests.TryDequeue(out _activeStepRequest))
         {
+            return;
+        }
+
+        var pending = _activeStepRequest;
+        if (pending == null)
+        {
+            return;
+        }
+
+        if (pending.IsCompleted)
+        {
+            _actionExecutor?.CancelActiveStep("step_timeout", captureResolution: false);
+            _activeStepRequest = null;
             return;
         }
 
@@ -657,6 +730,7 @@ internal sealed class TrainingBridgeServer : IDisposable
             {
                 pending.TrySetResult(CreateStepErrorResponse("step", "bridge_disposed", "Bridge is shutting down."));
                 RecordRequestOutcome("step", "bridge_disposed", null);
+                _activeStepRequest = null;
                 return;
             }
 
@@ -665,6 +739,7 @@ internal sealed class TrainingBridgeServer : IDisposable
                 _logWarn("TrainingBridgeServer rejected step request: scene not ready.");
                 pending.TrySetResult(CreateStepErrorResponse("step", "scene_not_ready", "Training scene is not ready."));
                 RecordRequestOutcome("step", "scene_not_ready", null);
+                _activeStepRequest = null;
                 return;
             }
 
@@ -673,15 +748,36 @@ internal sealed class TrainingBridgeServer : IDisposable
                 _logWarn("TrainingBridgeServer rejected step request: action executor unavailable.");
                 pending.TrySetResult(CreateStepErrorResponse("step", "action_executor_unavailable", "Action executor is unavailable."));
                 RecordRequestOutcome("step", "action_executor_unavailable", null);
+                _activeStepRequest = null;
                 return;
             }
 
-            var stepInfo = _actionExecutor.StartStep(pending.Action, out var actionError);
-            if (actionError != null)
+            if (!pending.Started)
             {
-                _logWarn($"TrainingBridgeServer step action failed: {actionError}");
-                pending.TrySetResult(CreateStepErrorResponse("step", actionError, ResolveErrorMessage(actionError), CreateErrorDetails("actionError", actionError)));
-                RecordRequestOutcome("step", actionError, stepInfo?.reward);
+                var startedInfo = _actionExecutor.StartStep(pending.Action, out var actionError);
+                if (actionError != null)
+                {
+                    _logWarn($"TrainingBridgeServer step action failed: {actionError}");
+                    pending.TrySetResult(CreateStepErrorResponse("step", actionError, ResolveErrorMessage(actionError), CreateErrorDetails("actionError", actionError)));
+                    RecordRequestOutcome("step", actionError, startedInfo?.reward);
+                    _activeStepRequest = null;
+                    return;
+                }
+
+                pending.MarkStarted();
+                return;
+            }
+
+            if (!_actionExecutor.TryConsumeResolvedStep(out var stepInfo, out var stepError))
+            {
+                return;
+            }
+
+            if (stepError != null)
+            {
+                pending.TrySetResult(CreateStepErrorResponse("step", stepError, ResolveErrorMessage(stepError), CreateErrorDetails("actionError", stepError)));
+                RecordRequestOutcome("step", stepError, stepInfo?.reward);
+                _activeStepRequest = null;
                 return;
             }
 
@@ -697,6 +793,7 @@ internal sealed class TrainingBridgeServer : IDisposable
                 _logError($"TrainingBridgeServer step observation failed: {ex.Message}");
                 pending.TrySetResult(CreateStepErrorResponse("step", "observation_failed", "Step observation failed."));
                 RecordRequestOutcome("step", "observation_failed", stepInfo?.reward);
+                _activeStepRequest = null;
                 return;
             }
 
@@ -704,6 +801,7 @@ internal sealed class TrainingBridgeServer : IDisposable
             {
                 type = "step_result",
                 protocolVersion = TrainingProtocol.Version,
+                requestType = "step",
                 observation = observation,
                 reward = stepInfo?.reward ?? 0,
                 terminated = false,
@@ -722,6 +820,7 @@ internal sealed class TrainingBridgeServer : IDisposable
                 _logError($"TrainingBridgeServer step serialization failed: {ex.Message}");
                 pending.TrySetResult(CreateStepErrorResponse("step", "serialization_failed", "Bridge response serialization failed."));
                 RecordRequestOutcome("step", "serialization_failed", stepInfo?.reward);
+                _activeStepRequest = null;
                 return;
             }
 
@@ -729,41 +828,73 @@ internal sealed class TrainingBridgeServer : IDisposable
             RecordRequestOutcome("step", null, stepInfo?.reward);
             MaybeLogDebugSummary("step");
             _logInfo("TrainingBridgeServer served step request.");
+            _activeStepRequest = null;
         }
         catch (Exception ex)
         {
             _logError($"TrainingBridgeServer step request failed: {ex.Message}");
             pending.TrySetResult(CreateStepErrorResponse("step", "step_failed", "Step request failed."));
             RecordRequestOutcome("step", "step_failed", null);
+            _activeStepRequest = null;
         }
     }
 
-    private async Task<string> ReadRequestAsync(StreamReader reader, CancellationToken cancellationToken)
+    private RequestReadResult ReadRequest(StreamReader reader)
     {
         var builder = new StringBuilder();
 
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            var chunk = new char[1024];
-            var read = await reader.ReadAsync(chunk, 0, chunk.Length).ConfigureAwait(false);
-            if (read <= 0)
+            while (true)
             {
-                break;
-            }
+                var next = reader.Read();
+                if (next < 0)
+                {
+                    break;
+                }
 
-            builder.Append(chunk, 0, read);
-            if (builder.ToString().IndexOf('\n') >= 0)
-            {
-                break;
-            }
+                if (next == '\n')
+                {
+                    break;
+                }
 
-            if (builder.Length > 8192)
-            {
-                break;
+                if (next != '\r')
+                {
+                    builder.Append((char)next);
+                }
+
+                if (builder.Length > MaxRequestCharacters)
+                {
+                    return new RequestReadResult
+                    {
+                        Status = RequestReadStatus.TooLarge,
+                        Content = null
+                    };
+                }
             }
         }
+        catch (IOException)
+        {
+            return new RequestReadResult
+            {
+                Status = RequestReadStatus.Timeout,
+                Content = null
+            };
+        }
+        catch (ObjectDisposedException)
+        {
+            return new RequestReadResult
+            {
+                Status = RequestReadStatus.Timeout,
+                Content = null
+            };
+        }
 
-        return builder.ToString().Trim();
+        return new RequestReadResult
+        {
+            Status = RequestReadStatus.Success,
+            Content = builder.ToString().Trim()
+        };
     }
 
     private static bool TryParseStepAction(string requestText, out TrainingBridgeStepActionRequest action, out string error)
@@ -904,6 +1035,10 @@ internal sealed class TrainingBridgeServer : IDisposable
                 return "Request body was empty.";
             case "malformed_request":
                 return "Request JSON was malformed or missing a type.";
+            case "request_timeout":
+                return "Request read timed out.";
+            case "request_too_large":
+                return "Request body exceeded the maximum allowed size.";
             case "unknown_request_type":
                 return "Unknown request type.";
             case "malformed_step_request":
@@ -930,6 +1065,10 @@ internal sealed class TrainingBridgeServer : IDisposable
                 return "Player root is missing.";
             case "step_timeout":
                 return "Step request timed out.";
+            case "step_replaced":
+                return "Active step was replaced before completion.";
+            case "step_canceled_by_reset":
+                return "Active step was canceled by reset.";
             case "step_failed":
                 return "Step request failed.";
             case "invalid_action":
@@ -985,7 +1124,9 @@ internal sealed class TrainingBridgeServer : IDisposable
 
         var status = _manager?.GetBridgeStatus() ?? new TrainingBridgeStatus
         {
+            type = "status_result",
             protocolVersion = TrainingProtocol.Version,
+            requestType = "status",
             sceneReady = false,
             trainingSceneName = null,
             playerRootFound = false,
@@ -993,7 +1134,8 @@ internal sealed class TrainingBridgeServer : IDisposable
             episodeStep = 0,
             tick = 0,
             timeSeconds = 0,
-            lastError = null
+            lastError = null,
+            error = null
         };
 
         var rewardText = reward.HasValue
@@ -1100,6 +1242,12 @@ internal sealed class TrainingBridgeServer : IDisposable
         public TrainingBridgeStepActionRequest Action { get; }
         public TaskCompletionSource<string> Completion => _completion;
         public bool IsCompleted => _completed != 0;
+        public bool Started { get; private set; }
+
+        public void MarkStarted()
+        {
+            Started = true;
+        }
 
         public void TrySetResult(string json)
         {
@@ -1116,5 +1264,18 @@ internal sealed class TrainingBridgeServer : IDisposable
                 _completion.TrySetResult(string.Empty);
             }
         }
+    }
+
+    private sealed class RequestReadResult
+    {
+        public RequestReadStatus Status { get; set; }
+        public string Content { get; set; }
+    }
+
+    private enum RequestReadStatus
+    {
+        Success,
+        Timeout,
+        TooLarge
     }
 }

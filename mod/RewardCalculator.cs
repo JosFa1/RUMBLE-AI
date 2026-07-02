@@ -35,7 +35,7 @@ internal sealed class RewardCalculator
         }
 
         var noProgress = Math.Abs(leftProgress) + Math.Abs(rightProgress) <= 0.001f;
-        if (input.leftMovementApplied || input.rightMovementApplied)
+        if (input.leftMovementApplied || input.rightMovementApplied || bothHandsNearTarget)
         {
             noProgress = false;
         }
@@ -43,13 +43,17 @@ internal sealed class RewardCalculator
         var noProgressPenalty = noProgress ? NoProgressPenalty : 0f;
         var bothHandsNearBonus = bothHandsNearTarget ? 0.15f : 0f;
         var totalReward = leftReward + rightReward + bothHandsNearBonus - clampPenalty - noProgressPenalty;
+        if (!float.IsFinite(totalReward))
+        {
+            totalReward = 0f;
+        }
 
         return new TrainingRewardBreakdown
         {
-            leftDistanceBefore = input.leftDistanceBefore,
-            leftDistanceAfter = input.leftDistanceAfter,
-            rightDistanceBefore = input.rightDistanceBefore,
-            rightDistanceAfter = input.rightDistanceAfter,
+            leftDistanceBefore = Sanitize(input.leftDistanceBefore),
+            leftDistanceAfter = Sanitize(input.leftDistanceAfter),
+            rightDistanceBefore = Sanitize(input.rightDistanceBefore),
+            rightDistanceAfter = Sanitize(input.rightDistanceAfter),
             leftProgress = leftProgress,
             rightProgress = rightProgress,
             leftReward = leftReward,
@@ -65,12 +69,17 @@ internal sealed class RewardCalculator
 
     private static float SafeDelta(float before, float after)
     {
-        if (float.IsNaN(before) || float.IsNaN(after))
+        if (!float.IsFinite(before) || !float.IsFinite(after))
         {
             return 0f;
         }
 
         return before - after;
+    }
+
+    private static float Sanitize(float value)
+    {
+        return float.IsFinite(value) ? value : 0f;
     }
 }
 

@@ -24,6 +24,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(Path(__file__).resolve().parents[1]))
+    except ValueError:
+        return str(path)
+
+
 def json_dump_line(payload: Dict[str, Any]) -> str:
     return json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
 
@@ -342,7 +349,7 @@ def main() -> int:
             "repeatedErrors": error_counter.most_common(10),
             "cyclesObserved": len(cycle_rows),
             "stepsObserved": success_steps + failure_steps,
-            "cyclesLog": str(cycles_path),
+            "cyclesLog": display_path(cycles_path),
         }
         status = "success" if failure_cycles == 0 and timeout_cycles == 0 and failure_steps == 0 else "failed"
         logger.finish(status=status, summary=summary)

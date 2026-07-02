@@ -18,6 +18,13 @@ def _short_run_id() -> str:
     return uuid.uuid4().hex[:10]
 
 
+def _display_path(path: Path, base_dir: Path) -> str:
+    try:
+        return str(path.relative_to(base_dir))
+    except ValueError:
+        return str(path)
+
+
 @dataclass
 class RunLogger:
     script_name: str
@@ -35,6 +42,7 @@ class RunLogger:
         self.metadata_path = self.run_dir / "metadata.json"
         self.steps_path = self.run_dir / "steps.jsonl"
         self._steps_handle = self.steps_path.open("a", encoding="utf-8", newline="\n")
+        project_root = self.run_dir.parents[1]
         self._metadata: Dict[str, Any] = {
             "runId": self.run_id,
             "scriptName": self.script_name,
@@ -42,9 +50,9 @@ class RunLogger:
             "status": "running",
             "config": self.config.to_dict(),
             "paths": {
-                "runDirectory": str(self.run_dir),
-                "metadata": str(self.metadata_path),
-                "steps": str(self.steps_path),
+                "runDirectory": _display_path(self.run_dir, project_root),
+                "metadata": _display_path(self.metadata_path, project_root),
+                "steps": _display_path(self.steps_path, project_root),
             },
         }
         self._write_metadata()

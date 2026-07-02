@@ -21,32 +21,35 @@ internal sealed class TrainingBridgeObservationResponse
 {
     public string type { get; set; }
     public string protocolVersion { get; set; }
+    public string requestType { get; set; }
     public TrainingObservation observation { get; set; }
-    public string error { get; set; }
+    public TrainingBridgeErrorInfo error { get; set; }
 }
 
 internal sealed class TrainingBridgeStepResponse
 {
     public string type { get; set; }
     public string protocolVersion { get; set; }
+    public string requestType { get; set; }
     public TrainingObservation observation { get; set; }
     public float reward { get; set; }
     public bool terminated { get; set; }
     public bool truncated { get; set; }
     public TrainingBridgeStepInfo info { get; set; }
-    public string error { get; set; }
+    public TrainingBridgeErrorInfo error { get; set; }
 }
 
 internal sealed class TrainingBridgeResetResponse
 {
     public string type { get; set; }
     public string protocolVersion { get; set; }
+    public string requestType { get; set; }
     public int episodeId { get; set; }
     public TrainingObservation observation { get; set; }
     public bool sceneReady { get; set; }
     public string resetMode { get; set; }
     public List<string> warnings { get; set; }
-    public string error { get; set; }
+    public TrainingBridgeErrorInfo error { get; set; }
 }
 
 internal sealed class TrainingBridgeStepInfo
@@ -63,6 +66,18 @@ internal sealed class TrainingBridgeStepInfo
     public string blockedReason { get; set; }
     public int durationMs { get; set; }
     public float elapsedMs { get; set; }
+    public float? leftDistanceBefore { get; set; }
+    public float? leftDistanceAfter { get; set; }
+    public float? rightDistanceBefore { get; set; }
+    public float? rightDistanceAfter { get; set; }
+    public ObservationVector3 leftTargetWorld { get; set; }
+    public ObservationVector3 rightTargetWorld { get; set; }
+    public ObservationVector3 leftTargetLocalClamped { get; set; }
+    public ObservationVector3 rightTargetLocalClamped { get; set; }
+    public bool reachedLeftTarget { get; set; }
+    public bool reachedRightTarget { get; set; }
+    public bool actionWindowCompleted { get; set; }
+    public bool activeStepReplaced { get; set; }
     public float reward { get; set; }
     public TrainingRewardBreakdown rewardBreakdown { get; set; }
     public List<string> notes { get; set; }

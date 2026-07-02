@@ -1,23 +1,50 @@
 # Training Protocol v0.3
 
-This protocol exposes a small localhost bridge for trainer tooling. The bridge
-uses plain TCP with one JSON request per connection and one JSON response per
-connection. Each payload is newline-delimited UTF-8 JSON.
+The RUMBLE bridge exposes a localhost TCP protocol for validation and trainer bring-up. Each connection carries exactly one newline-delimited UTF-8 JSON request and one newline-delimited UTF-8 JSON response.
 
 ## Transport
 
 - Host: `127.0.0.1` by default
 - Port: `8765` by default
-- Override with environment variables on the mod side:
+- Mod-side overrides:
   - `AI_TRAIN_BRIDGE_HOST`
   - `AI_TRAIN_BRIDGE_PORT`
-- Override from the trainer side with the Python client flags:
+- Trainer-side overrides:
   - `--host`
   - `--port`
+  - `trainer-client/config.json`
 
-## Request format
+The server only binds to loopback.
 
-Each request is a UTF-8 JSON object followed by a newline.
+## Runtime scene behavior
+
+- The mod creates a dedicated `AI_Train_Training` scene at runtime.
+- In no-headset PC sessions, the mod directly loads the game's built-in `Gym` scene after the normal loader does not advance.
+- The training actor is the Gym-spawned player-controller root. The Loader actor is never accepted as the Gym training actor.
+- Gym scene geometry, lighting, probes, and VFX are moved with the actor into the stripped runtime scene.
+- A PC spectator camera is managed by the mod for observation; it is not part of the wire protocol.
+
+## Protocol version
+
+- Current version: `0.3`
+- Responses always include `protocolVersion`
+- Requests do not need to include `protocolVersion`
+- The Python client compares the observed response version to its configured expected version and warns on mismatch by default
+
+Matching schemas:
+
+- `protocol/schemas/action-v0.3.json`
+- `protocol/schemas/observation-v0.3.json`
+- `protocol/schemas/response-v0.3.json`
+
+## Request types
+
+Implemented requests:
+
+- `status`
+- `get_observation`
+- `reset_episode`
+- `step`
 
 Examples:
 
@@ -44,14 +71,28 @@ Examples:
 }
 ```
 
-The bridge currently accepts four request types: `status`, `get_observation`,
-`reset_episode`, and `step`.
+`leftHandTargetLocal` and `rightHandTargetLocal` are expressed in player-root-local coordinates. `durationMs` is clamped to a safe maximum of `1000`.
 
-Every bridge response includes `protocolVersion`. Normal responses may also
-carry `error: null`, while protocol-level failures use the dedicated error
-envelope.
+## Response shape
 
-## Status request
+Successful responses use a consistent top-level shape:
+
+- `type`
+- `protocolVersion`
+- `requestType`
+- payload fields for that response
+- `error: null`
+
+Protocol failures use:
+
+- `type: "error"`
+- `protocolVersion`
+- `requestType`
+- `error.code`
+- `error.message`
+- `error.details` when available
+
+## Status response
 
 Request:
 
@@ -63,21 +104,24 @@ Response:
 
 ```json
 {
+  "type": "status_result",
   "protocolVersion": "0.3",
+  "requestType": "status",
   "sceneReady": true,
   "trainingSceneName": "AI_Train_Training",
   "playerRootFound": true,
-  "episodeId": 2,
+  "episodeId": 7,
   "episodeStep": 0,
   "tick": 12345,
   "timeSeconds": 12.3456,
-  "lastError": null
+  "lastError": null,
+  "error": null
 }
 ```
 
-The status response is a direct snapshot of the current training environment.
+`status` is a snapshot of cached bridge and environment state. It does not touch Unity objects outside the manager’s cached telemetry.
 
-## Observation request
+## Observation response
 
 Request:
 
@@ -91,12 +135,15 @@ Successful response:
 {
   "type": "observation",
   "protocolVersion": "0.3",
+  "requestType": "get_observation",
   "observation": {
     "protocolVersion": "0.3",
     "tick": 12345,
     "timeSeconds": 12.3456,
+    "observationSpace": "world",
+    "actionTargetSpace": "player_root_local",
     "sceneReady": true,
-    "episodeId": 2,
+    "episodeId": 7,
     "episodeStep": 0,
     "rootPosition": { "x": 0.0, "y": 0.0, "z": 0.0 },
     "rootRotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
@@ -109,25 +156,17 @@ Successful response:
     "health": null,
     "error": null,
     "warnings": []
-  }
+  },
+  "error": null
 }
 ```
 
-If observation building fails, the bridge returns:
+Coordinate semantics:
 
-```json
-{
-  "type": "error",
-  "protocolVersion": "0.3",
-  "requestType": "get_observation",
-  "error": {
-    "code": "scene_not_ready",
-    "message": "Training scene is not ready."
-  }
-}
-```
+- observation positions and rotations are in world space
+- action targets are in player-root-local space
 
-## Reset request
+## Reset response
 
 Request:
 
@@ -141,13 +180,16 @@ Successful response:
 {
   "type": "reset_result",
   "protocolVersion": "0.3",
-  "episodeId": 2,
+  "requestType": "reset_episode",
+  "episodeId": 8,
   "observation": {
     "protocolVersion": "0.3",
-    "tick": 12345,
-    "timeSeconds": 12.3456,
+    "tick": 12380,
+    "timeSeconds": 12.8125,
+    "observationSpace": "world",
+    "actionTargetSpace": "player_root_local",
     "sceneReady": true,
-    "episodeId": 2,
+    "episodeId": 8,
     "episodeStep": 0,
     "warnings": []
   },
@@ -160,12 +202,16 @@ Successful response:
 }
 ```
 
-The bridge increments the episode id, clears the step count, clears pending
-action state, and best-effort snaps the hands back to a neutral pose. The
-current implementation returns `partial` because the root transform is
-preserved.
+Reset behavior:
 
-## Step request
+- increments the episode id
+- resets `episodeStep` to `0`
+- cancels an active step if one is in flight
+- clears last reward state
+- best-effort snaps hands back to neutral
+- preserves the current player root transform
+
+## Step response
 
 Request:
 
@@ -186,42 +232,74 @@ Successful response:
 {
   "type": "step_result",
   "protocolVersion": "0.3",
+  "requestType": "step",
   "observation": {},
   "reward": 0.12,
   "terminated": false,
   "truncated": false,
   "info": {
+    "actionApplied": true,
+    "leftHandFound": true,
+    "rightHandFound": true,
+    "leftTargetClamped": false,
+    "rightTargetClamped": false,
+    "leftMovementBlocked": false,
+    "rightMovementBlocked": false,
+    "leftHandPath": "BootLoaderPlayer/Left Controller/IkTarget/InteractionHand",
+    "rightHandPath": "BootLoaderPlayer/Right Controller/IkTarget/InteractionHand",
+    "blockedReason": null,
+    "durationMs": 100,
+    "elapsedMs": 101.4,
+    "leftDistanceBefore": 0.27,
+    "leftDistanceAfter": 0.08,
+    "rightDistanceBefore": 0.27,
+    "rightDistanceAfter": 0.08,
+    "leftTargetWorld": { "x": -0.18, "y": 1.14, "z": 0.42 },
+    "rightTargetWorld": { "x": 0.18, "y": 1.14, "z": 0.42 },
+    "leftTargetLocalClamped": { "x": -0.18, "y": 1.14, "z": 0.42 },
+    "rightTargetLocalClamped": { "x": 0.18, "y": 1.14, "z": 0.42 },
+    "reachedLeftTarget": false,
+    "reachedRightTarget": false,
+    "actionWindowCompleted": true,
+    "activeStepReplaced": false,
     "reward": 0.12,
     "rewardBreakdown": {
       "leftDistanceBefore": 0.27,
-      "leftDistanceAfter": 0.21,
+      "leftDistanceAfter": 0.08,
       "rightDistanceBefore": 0.27,
-      "rightDistanceAfter": 0.21,
-      "leftProgress": 0.06,
-      "rightProgress": 0.06,
-      "leftReward": 0.06,
-      "rightReward": 0.06,
+      "rightDistanceAfter": 0.08,
+      "leftProgress": 0.19,
+      "rightProgress": 0.19,
+      "leftReward": 0.19,
+      "rightReward": 0.19,
       "bothHandsNearBonus": 0.0,
       "clampPenalty": 0.0,
       "noProgressPenalty": 0.0,
-      "totalReward": 0.12,
+      "totalReward": 0.38,
       "bothHandsNearTarget": false,
       "noProgress": false
-    }
+    },
+    "notes": [
+      "left hand moved",
+      "right hand moved"
+    ]
   },
   "error": null
 }
 ```
 
-The `info` object records whether the hands were found, whether movement was
-clamped or blocked, and the reward breakdown for the step. Reward increases
-when the hands move closer to their targets and includes a small bonus when
-both hands end up near target.
+Step semantics for this milestone:
 
-## Error response format
+- the request is accepted on the TCP background thread and executed on the Unity main thread
+- the mod applies the action over the requested duration window
+- the bridge does not reply until the action window completes or a safe error occurs
+- the returned observation is the post-step observation after the action window
+- `info.elapsedMs` is measured from Unity unscaled time, not wall-clock `DateTime`
+- reward is computed from before/after distances across the full action window
 
-Malformed JSON, unknown request types, and other bridge-level failures return a
-safe error envelope:
+## Error response
+
+Example:
 
 ```json
 {
@@ -238,47 +316,34 @@ safe error envelope:
 }
 ```
 
-The `error` object always includes:
-
-- `code`
-- `message`
-- `details` when extra context is available
-
-Common error codes include:
+Common error codes:
 
 - `empty_request`
+- `malformed_request`
+- `request_timeout`
+- `request_too_large`
 - `unknown_request_type`
+- `bridge_disposed`
 - `scene_not_ready`
 - `observation_unavailable`
 - `observation_timeout`
-- `serialization_failed`
 - `observation_failed`
-- `bridge_disposed`
-- `internal_error`
-
-Reset-specific failures may also report:
-
 - `reset_timeout`
 - `reset_failed`
 - `reset_rejected`
 - `action_executor_unavailable`
 - `player_root_missing`
-
-Step-specific failures may also report:
-
 - `malformed_step_request`
 - `step_timeout`
+- `step_canceled_by_reset`
 - `step_failed`
-- `action_executor_unavailable`
-- `player_root_missing`
 - `invalid_action`
+
+Malformed, partial, oversized, unknown, or slow requests must never crash the game. They should return a safe protocol error or, in the timeout case, be canceled cleanly.
 
 ## Known limitations
 
-- The bridge currently targets a single training actor, not multi-agent
-  matchmaking or concurrent episodes.
-- Reset is partial: the current implementation preserves the root transform.
-- Observation and step handling happen on the Unity main thread.
-- Requests are one-at-a-time over a short-lived TCP connection.
-- Reward logic is heuristic and is meant for trainer bring-up, not final
-  learning quality.
+- Single actor, single scene, single active step at a time
+- Reset remains partial and preserves the player root transform
+- Reward logic is validation-oriented, not final training reward design
+- Live behavior still depends on the actual in-game actor rig and mod loader environment

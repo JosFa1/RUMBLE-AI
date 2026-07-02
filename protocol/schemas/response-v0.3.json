@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "response-v0.3.json",
+  "title": "Training Bridge Response v0.3",
+  "oneOf": [
+    { "$ref": "#/$defs/statusResponse" },
+    { "$ref": "#/$defs/observationResponse" },
+    { "$ref": "#/$defs/resetResponse" },
+    { "$ref": "#/$defs/stepResponse" },
+    { "$ref": "#/$defs/errorResponse" }
+  ],
+  "$defs": {
+    "statusResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "protocolVersion",
+        "requestType",
+        "sceneReady",
+        "trainingSceneName",
+        "playerRootFound",
+        "episodeId",
+        "episodeStep",
+        "tick",
+        "timeSeconds",
+        "lastError",
+        "error"
+      ],
+      "properties": {
+        "type": { "const": "status_result" },
+        "protocolVersion": { "type": "string" },
+        "requestType": { "const": "status" },
+        "sceneReady": { "type": "boolean" },
+        "trainingSceneName": { "type": ["string", "null"] },
+        "playerRootFound": { "type": "boolean" },
+        "episodeId": { "type": "integer" },
+        "episodeStep": { "type": "integer" },
+        "tick": { "type": "integer" },
+        "timeSeconds": { "type": "number" },
+        "lastError": { "type": ["string", "null"] },
+        "error": { "type": "null" }
+      }
+    },
+    "observationResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "protocolVersion", "requestType", "observation", "error"],
+      "properties": {
+        "type": { "const": "observation" },
+        "protocolVersion": { "type": "string" },
+        "requestType": { "const": "get_observation" },
+        "observation": { "$ref": "./observation-v0.3.json" },
+        "error": { "type": "null" }
+      }
+    },
+    "resetResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "protocolVersion", "requestType", "episodeId", "observation", "sceneReady", "resetMode", "warnings", "error"],
+      "properties": {
+        "type": { "const": "reset_result" },
+        "protocolVersion": { "type": "string" },
+        "requestType": { "const": "reset_episode" },
+        "episodeId": { "type": "integer" },
+        "observation": { "$ref": "./observation-v0.3.json" },
+        "sceneReady": { "type": "boolean" },
+        "resetMode": { "type": "string" },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "error": { "type": "null" }
+      }
+    },
+    "stepResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "protocolVersion", "requestType", "observation", "reward", "terminated", "truncated", "info", "error"],
+      "properties": {
+        "type": { "const": "step_result" },
+        "protocolVersion": { "type": "string" },
+        "requestType": { "const": "step" },
+        "observation": { "$ref": "./observation-v0.3.json" },
+        "reward": { "type": "number" },
+        "terminated": { "type": "boolean" },
+        "truncated": { "type": "boolean" },
+        "info": { "$ref": "#/$defs/stepInfo" },
+        "error": { "type": "null" }
+      }
+    },
+    "errorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "protocolVersion", "requestType", "error"],
+      "properties": {
+        "type": { "const": "error" },
+        "protocolVersion": { "type": "string" },
+        "requestType": { "type": "string" },
+        "error": { "$ref": "#/$defs/errorInfo" }
+      }
+    },
+    "errorInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "details": { "type": ["object", "null"] }
+      }
+    },
+    "stepInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actionApplied",
+        "leftHandFound",
+        "rightHandFound",
+        "leftTargetClamped",
+        "rightTargetClamped",
+        "leftMovementBlocked",
+        "rightMovementBlocked",
+        "leftHandPath",
+        "rightHandPath",
+        "blockedReason",
+        "durationMs",
+        "elapsedMs",
+        "leftDistanceBefore",
+        "leftDistanceAfter",
+        "rightDistanceBefore",
+        "rightDistanceAfter",
+        "leftTargetWorld",
+        "rightTargetWorld",
+        "leftTargetLocalClamped",
+        "rightTargetLocalClamped",
+        "reachedLeftTarget",
+        "reachedRightTarget",
+        "actionWindowCompleted",
+        "activeStepReplaced",
+        "reward",
+        "rewardBreakdown",
+        "notes"
+      ],
+      "properties": {
+        "actionApplied": { "type": "boolean" },
+        "leftHandFound": { "type": "boolean" },
+        "rightHandFound": { "type": "boolean" },
+        "leftTargetClamped": { "type": "boolean" },
+        "rightTargetClamped": { "type": "boolean" },
+        "leftMovementBlocked": { "type": "boolean" },
+        "rightMovementBlocked": { "type": "boolean" },
+        "leftHandPath": { "type": ["string", "null"] },
+        "rightHandPath": { "type": ["string", "null"] },
+        "blockedReason": { "type": ["string", "null"] },
+        "durationMs": { "type": "integer" },
+        "elapsedMs": { "type": "number" },
+        "leftDistanceBefore": { "type": "number" },
+        "leftDistanceAfter": { "type": "number" },
+        "rightDistanceBefore": { "type": "number" },
+        "rightDistanceAfter": { "type": "number" },
+        "leftTargetWorld": { "$ref": "./observation-v0.3.json#/$defs/vector3" },
+        "rightTargetWorld": { "$ref": "./observation-v0.3.json#/$defs/vector3" },
+        "leftTargetLocalClamped": { "$ref": "./observation-v0.3.json#/$defs/vector3" },
+        "rightTargetLocalClamped": { "$ref": "./observation-v0.3.json#/$defs/vector3" },
+        "reachedLeftTarget": { "type": "boolean" },
+        "reachedRightTarget": { "type": "boolean" },
+        "actionWindowCompleted": { "type": "boolean" },
+        "activeStepReplaced": { "type": "boolean" },
+        "reward": { "type": "number" },
+        "rewardBreakdown": { "$ref": "#/$defs/rewardBreakdown" },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "rewardBreakdown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "leftDistanceBefore",
+        "leftDistanceAfter",
+        "rightDistanceBefore",
+        "rightDistanceAfter",
+        "leftProgress",
+        "rightProgress",
+        "leftReward",
+        "rightReward",
+        "bothHandsNearBonus",
+        "clampPenalty",
+        "noProgressPenalty",
+        "totalReward",
+        "bothHandsNearTarget",
+        "noProgress"
+      ],
+      "properties": {
+        "leftDistanceBefore": { "type": "number" },
+        "leftDistanceAfter": { "type": "number" },
+        "rightDistanceBefore": { "type": "number" },
+        "rightDistanceAfter": { "type": "number" },
+        "leftProgress": { "type": "number" },
+        "rightProgress": { "type": "number" },
+        "leftReward": { "type": "number" },
+        "rightReward": { "type": "number" },
+        "bothHandsNearBonus": { "type": "number" },
+        "clampPenalty": { "type": "number" },
+        "noProgressPenalty": { "type": "number" },
+        "totalReward": { "type": "number" },
+        "bothHandsNearTarget": { "type": "boolean" },
+        "noProgress": { "type": "boolean" }
+      }
+    }
+  }
+}

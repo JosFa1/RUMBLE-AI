@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Reflection;
 using System.Text.Json.Serialization;
 using UnityEngine;
@@ -10,41 +9,6 @@ namespace AI_Train;
 
 internal sealed class ObservationBuilder
 {
-    private static readonly string[] HeadCandidates =
-    {
-        "Headset Offset/Headset",
-        "Headset",
-        "Head",
-        "HeadPivot",
-        "Camera",
-        "Visuals/Head",
-        "Visuals/Headset"
-    };
-
-    private static readonly string[] LeftHandCandidates =
-    {
-        "Left Controller/IkTarget/InteractionHand",
-        "Left Controller/IkTarget",
-        "Left Controller/InteractionHand",
-        "Left Controller/LeftHand",
-        "Left Controller/Left Hand",
-        "Visuals/Left",
-        "LeftHand",
-        "Left Hand"
-    };
-
-    private static readonly string[] RightHandCandidates =
-    {
-        "Right Controller/IkTarget/InteractionHand",
-        "Right Controller/IkTarget",
-        "Right Controller/InteractionHand",
-        "Right Controller/RightHand",
-        "Right Controller/Right Hand",
-        "Visuals/Right",
-        "RightHand",
-        "Right Hand"
-    };
-
     private static readonly string[] HealthNameHints =
     {
         "health",
@@ -72,6 +36,8 @@ internal sealed class ObservationBuilder
             protocolVersion = TrainingProtocol.Version,
             tick = Time.frameCount,
             timeSeconds = Time.unscaledTime,
+            observationSpace = "world",
+            actionTargetSpace = "player_root_local",
             warnings = new List<string>()
         };
 
@@ -116,7 +82,7 @@ internal sealed class ObservationBuilder
         observation.rootPosition = ToVector3(rootTransform.position);
         observation.rootRotation = ToQuaternion(rootTransform.rotation);
 
-        var head = ResolveTransform(rootTransform, "head", HeadCandidates);
+        var head = TrainingActorLocator.Resolve(rootTransform, TrainingActorLocator.HeadCandidates).Transform;
         if (head != null)
         {
             LogResolvedOnce("head", GetPath(head));
@@ -130,7 +96,7 @@ internal sealed class ObservationBuilder
             LogMissingOnce("head", warning);
         }
 
-        var leftHand = ResolveTransform(rootTransform, "leftHand", LeftHandCandidates);
+        var leftHand = TrainingActorLocator.Resolve(rootTransform, TrainingActorLocator.LeftHandCandidates).Transform;
         if (leftHand != null)
         {
             LogResolvedOnce("leftHand", GetPath(leftHand));
@@ -144,7 +110,7 @@ internal sealed class ObservationBuilder
             LogMissingOnce("leftHand", warning);
         }
 
-        var rightHand = ResolveTransform(rootTransform, "rightHand", RightHandCandidates);
+        var rightHand = TrainingActorLocator.Resolve(rootTransform, TrainingActorLocator.RightHandCandidates).Transform;
         if (rightHand != null)
         {
             LogResolvedOnce("rightHand", GetPath(rightHand));
@@ -208,64 +174,6 @@ internal sealed class ObservationBuilder
         }
 
         _logWarn($"ObservationBuilder missing {key}: {message}");
-    }
-
-    private static Transform ResolveTransform(Transform root, string key, IEnumerable<string> candidates)
-    {
-        if (root == null)
-        {
-            return null;
-        }
-
-        foreach (var candidate in candidates)
-        {
-            if (string.IsNullOrWhiteSpace(candidate))
-            {
-                continue;
-            }
-
-            var direct = root.Find(candidate);
-            if (direct != null)
-            {
-                return direct;
-            }
-
-            var fallback = FindDescendantByName(root, candidate.Split('/').Last());
-            if (fallback != null)
-            {
-                return fallback;
-            }
-        }
-
-        return null;
-    }
-
-    private static Transform FindDescendantByName(Transform root, string name)
-    {
-        if (root == null || string.IsNullOrWhiteSpace(name))
-        {
-            return null;
-        }
-
-        var queue = new Queue<Transform>();
-        queue.Enqueue(root);
-
-        while (queue.Count > 0)
-        {
-            var current = queue.Dequeue();
-            if (current != null && string.Equals(current.name, name, StringComparison.OrdinalIgnoreCase))
-            {
-                return current;
-            }
-
-            var childCount = current != null ? current.childCount : 0;
-            for (var i = 0; i < childCount; i++)
-            {
-                queue.Enqueue(current.GetChild(i));
-            }
-        }
-
-        return null;
     }
 
     private static bool TryReadHealth(Transform root, out float health, out string source)
@@ -445,6 +353,12 @@ internal sealed class TrainingObservation
 
     [JsonPropertyName("timeSeconds")]
     public float timeSeconds { get; set; }
+
+    [JsonPropertyName("observationSpace")]
+    public string observationSpace { get; set; }
+
+    [JsonPropertyName("actionTargetSpace")]
+    public string actionTargetSpace { get; set; }
 
     [JsonPropertyName("sceneReady")]
     public bool sceneReady { get; set; }

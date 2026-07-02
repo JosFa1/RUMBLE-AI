@@ -139,6 +139,7 @@ class TrainerClientConfig:
     log_directory: str = "runs"
     safe_hand_bounds: SafeHandBounds = DEFAULT_SAFE_HAND_BOUNDS
     protocol_version: str = "0.3"
+    strict_protocol_version: bool = False
     source_path: Optional[str] = None
 
     @property
@@ -162,6 +163,7 @@ class TrainerClientConfig:
         payload["actionDurationMs"] = payload.pop("action_duration_ms")
         payload["logDirectory"] = payload.pop("log_directory")
         payload["protocolVersion"] = payload.pop("protocol_version")
+        payload["strictProtocolVersion"] = payload.pop("strict_protocol_version")
         payload["host"] = payload.pop("host")
         payload["port"] = payload.pop("port")
         payload.pop("source_path", None)
@@ -182,6 +184,7 @@ class TrainerClientConfig:
             log_directory=str(value.get("logDirectory", default.log_directory)),
             safe_hand_bounds=SafeHandBounds.from_mapping(value.get("safeHandBounds"), default.safe_hand_bounds),
             protocol_version=str(value.get("protocolVersion", default.protocol_version)),
+            strict_protocol_version=bool(value.get("strictProtocolVersion", default.strict_protocol_version)),
             source_path=None,
         )
 
@@ -212,6 +215,7 @@ def apply_overrides(
     action_duration_ms: int | None = None,
     log_directory: str | None = None,
     protocol_version: str | None = None,
+    strict_protocol_version: bool | None = None,
 ) -> TrainerClientConfig:
     overrides: Dict[str, Any] = {}
     if host is not None:
@@ -230,6 +234,8 @@ def apply_overrides(
         overrides["log_directory"] = log_directory
     if protocol_version is not None:
         overrides["protocol_version"] = protocol_version
+    if strict_protocol_version is not None:
+        overrides["strict_protocol_version"] = bool(strict_protocol_version)
 
     return config.with_overrides(**overrides) if overrides else config
 
@@ -242,6 +248,7 @@ def make_client(config: TrainerClientConfig):
         port=config.port,
         timeout_seconds=config.timeout_seconds,
         protocol_version=config.protocol_version,
+        strict_protocol_version=config.strict_protocol_version,
     )
 
 

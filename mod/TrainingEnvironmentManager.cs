@@ -185,7 +185,9 @@ internal sealed class TrainingEnvironmentManager
         {
             return new TrainingBridgeStatus
             {
+                type = "status_result",
                 protocolVersion = TrainingProtocol.Version,
+                requestType = "status",
                 sceneReady = _isReady,
                 trainingSceneName = _currentTrainingSceneName,
                 playerRootFound = _playerRootFound,
@@ -193,7 +195,8 @@ internal sealed class TrainingEnvironmentManager
                 episodeStep = _currentEpisodeStepCount,
                 tick = _lastTick,
                 timeSeconds = _lastTimeSeconds,
-                lastError = _lastError
+                lastError = _lastError,
+                error = null
             };
         }
     }
@@ -294,7 +297,9 @@ internal sealed class TrainingEnvironmentStatus
 
 internal sealed class TrainingBridgeStatus
 {
+    public string type { get; set; }
     public string protocolVersion { get; set; }
+    public string requestType { get; set; }
     public bool sceneReady { get; set; }
     public string trainingSceneName { get; set; }
     public bool playerRootFound { get; set; }
@@ -303,4 +308,5 @@ internal sealed class TrainingBridgeStatus
     public int tick { get; set; }
     public float timeSeconds { get; set; }
     public string lastError { get; set; }
+    public TrainingBridgeErrorInfo error { get; set; }
 }
