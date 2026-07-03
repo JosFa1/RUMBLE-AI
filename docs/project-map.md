@@ -16,7 +16,8 @@ The mod builds a runtime training scene, locates the playable actor, exposes bri
 Important mod files:
 
 - `mod/Core.cs`: MelonLoader entry point and lifecycle wiring.
-- `mod/TrainingFoundation.cs`: scene setup and runtime orchestration.
+- `mod/TrainingFoundation.cs`: lifecycle wiring, hotkeys, low-level scene operations, and staged bootstrap integration.
+- `mod/TrainingBootstrapOrchestrator.cs`: staged bootstrap state machine for inventory, Gym load confirmation, Loader cleanup, passive actor/capability discovery, minimal arena build, ready, and failed states.
 - `mod/TrainingActorLocator.cs`: player actor discovery.
 - `mod/TrainingEnvironmentManager.cs`: current scene, episode, player-root, and status state.
 - `mod/TrainingBridgeServer.cs`: localhost TCP server and request dispatch.
@@ -25,7 +26,9 @@ Important mod files:
 - `mod/ActionExecutor.cs`: safe action execution and reset handling.
 - `mod/RewardCalculator.cs`: validation-oriented reward breakdown.
 - `mod/TrainingProtocol.cs`: current protocol version.
-- `mod/TrainingExplorationService.cs` and `mod/TrainingRuntimeTools.cs`: debug and runtime inspection support.
+- `mod/TrainingExplorationService.cs`: retained legacy debug report support.
+- `mod/TrainingExplorationProbeService.cs`: bounded manual summon, movement, dummy-target, and interaction probes.
+- `mod/TrainingRuntimeTools.cs`: runtime host, monitor camera, and probe contact recorder.
 
 ## Trainer Client Architecture
 
@@ -59,12 +62,22 @@ Implemented request types are:
 - `reset_episode`
 - `step`
 - `debug_probe`
+- `get_bootstrap_report`
+- `retry_bootstrap`
+- `run_scene_inventory`
+- `run_actor_discovery`
+- `run_capability_discovery`
+- `run_single_actor_summon_probe`
+- `run_move_probe`
+- `run_multi_actor_probe`
+- `run_actor_interaction_probe`
+- `run_arena_rebuild`
 
 Responses include `protocolVersion`, `requestType`, an endpoint-specific payload, and either `error: null` or a structured protocol error.
 
 ## Operator Entry Point
 
-The recommended app is the Python operator console. It lets an operator connect, see bridge status, get observations, reset, send a safe step, run a scripted sequence, run a random policy test, run a short stability test, run validation, inspect config, edit basic config, and locate the latest run folder.
+The recommended app is the Python operator console. It lets an operator connect, see bridge status, staged bootstrap state, get observations, reset, send a safe step, run a scripted sequence, run a random policy test, run a short stability test, run validation, inspect config, edit basic config, and locate the latest run folder.
 
 Low-level scripts are still useful for debugging individual endpoints:
 

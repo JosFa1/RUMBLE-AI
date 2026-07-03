@@ -81,6 +81,12 @@ class RumbleEnvClient:
     def debug_probe(self) -> Dict[str, Any]:
         return self.request({"type": "debug_probe"})
 
+    def bootstrap_request(self, request_type: str) -> Dict[str, Any]:
+        if not isinstance(request_type, str) or not request_type:
+            raise BridgeError("bootstrap_request(request_type) expects a request type string.")
+
+        return self.request({"type": request_type})
+
     @staticmethod
     def _read_line(sock: socket.socket) -> str:
         buffer = bytearray()

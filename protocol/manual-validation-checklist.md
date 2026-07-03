@@ -40,6 +40,7 @@ Expected pass signs:
 - `TrainingBridgeServer listening on 127.0.0.1:8765.`
 
 Failure signs: `sceneReady=false`, `playerRootFound=false`, port already in use, or no listener message.
+Bootstrap failure signs: `bootstrapFailed=true`, a stalled `bootstrapStage`, missing `latestDumpPath`, or no `bootstrap_stage_*.json` files under `UserData\AI_Train\Dumps\`. Discovery-stage failures should also leave `latest_actor_discovery.json` or `latest_capability_discovery.json`.
 
 ## 5. Run The Operator App
 
@@ -51,12 +52,26 @@ python scripts/operator_console.py
 ```
 
 Use menu option `1` for status, `2` for observation, `3` for reset, and `4` for a safe step.
+Use menu option `13` for bootstrap diagnostics such as scene inventory, actor discovery, and capability discovery reports.
 
-Expected pass signs: status shows `sceneReady=true`, `playerRootFound=true`, protocol `0.3`, no last error, and safe step returns a finite reward.
+Expected pass signs: status shows `bootstrapStage=Ready`, `bootstrapReady=true`, `gymLoaded=true`, `primaryActorFound=true`, `arenaBuilt=true`, `sceneReady=true`, `playerRootFound=true`, protocol `0.3`, and no last error. The live validator must also parse the current scene/actor/capability/arena dumps, confirm exact head/hand paths, passive capability discovery, `managerInitialized=true`, `usableFloorConfirmed=true`, and a finite safe-step reward.
 
 Failure signs: connection refused, timeout, protocol mismatch, missing player root, or step error.
 
-## 6. Run Offline Validation
+## 6. Run Gated Exploration Probes
+
+Leave all active probe gates false for normal startup. To test a probe, set only its matching constant in `mod\TrainingFoundation.cs` to `true`, rebuild, relaunch RUMBLE, and use operator menu `13`:
+
+- option `5`: single summon; wait for `summonProbeStatus` to leave `running`, then inspect `latest_single_actor_summon_probe.json`
+- option `6`: move/modifier; wait for `moveProbeStatus` to leave `running`, then inspect `latest_move_probe.json`
+- option `7`: multi-actor feasibility; expect at most `dummy_target_confirmed`, then inspect `latest_multi_actor_probe.json`
+- option `8`: interaction; expect `collision_confirmed`, `contact_confirmed`, or evidence-backed `failed`, always with `damageEvidence=false`, then inspect `latest_actor_interaction_probe.json`
+
+Expected pass signs: every request records one bounded attempt, evidence is explicit, cleanup is recorded, and the game remains responsive. `partial`, `no_safe_candidate`, `unsafe_not_invoked`, and evidence-backed `failed` are valid exploration outcomes; they are not feature success.
+
+Failure signs: status remains `running`, more than one candidate is invoked, probe objects accumulate, the actor keeps moving after the move probe, damage is claimed without state evidence, or RUMBLE becomes unstable.
+
+## 7. Run Offline Validation
 
 Command:
 
@@ -68,7 +83,7 @@ Expected pass signs: JSON output has `"passed": true` and the final line is `PAS
 
 Failure signs: missing docs, stale script references, generated files tracked by git, protocol version drift, or broken imports.
 
-## 7. Run Live Validation
+## 8. Run Live Validation
 
 Command:
 
@@ -78,9 +93,9 @@ python scripts/run_full_validation.py
 
 Expected pass signs: final line is `PASS`, a run folder is created, and `validation_report.json` is saved.
 
-Failure signs: connection failure, `sceneReady=false`, malformed request checks fail, safe step reward is not finite, clamped step lacks clamp info, or stability run fails.
+Failure signs: connection failure, `bootstrapFailed=true`, `bootstrapReady=false`, `sceneReady=false`, malformed request checks fail, safe step reward is not finite, clamped step lacks clamp info, or stability run fails.
 
-## 8. Run Scripted Sequence
+## 9. Run Scripted Sequence
 
 Operator menu: `5. Run scripted pose sequence`
 
@@ -94,7 +109,7 @@ Expected pass signs: exit code `0`, `failureCount=0`, and a run folder with `ste
 
 Failure signs: hand paths missing, action not applied when not already at target, movement blocked, or no target progress.
 
-## 9. Run Stability Test
+## 10. Run Stability Test
 
 Operator menu: `7. Run short bridge stability test`
 
@@ -108,7 +123,7 @@ Expected pass signs: exit code `0`, no failures or timeouts, and `cycles.jsonl` 
 
 Failure signs: intermittent timeouts, reset hangs, repeated bridge errors, or nonzero failure counts.
 
-## 10. Inspect Logs
+## 11. Inspect Logs
 
 Run folders are under `trainer-client/runs/`.
 

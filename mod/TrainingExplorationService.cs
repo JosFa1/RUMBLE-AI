@@ -549,13 +549,16 @@ internal sealed class TrainingExplorationService
             }
 
             var method = typeof(Resources).GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .FirstOrDefault(m => m.Name == "FindObjectsOfTypeAll" &&
-                                     m.GetParameters().Length == 1 &&
-                                     m.GetParameters()[0].ParameterType == typeof(Type));
+                .FirstOrDefault(candidate =>
+                    candidate.Name == "FindObjectsOfTypeAll" &&
+                    candidate.IsGenericMethodDefinition &&
+                    candidate.GetGenericArguments().Length == 1 &&
+                    candidate.GetParameters().Length == 0);
 
             if (method != null)
             {
-                var results = method.Invoke(null, new object[] { type }) as IEnumerable;
+                var results = method.MakeGenericMethod(type)
+                    .Invoke(null, Array.Empty<object>()) as IEnumerable;
                 if (results != null)
                 {
                     foreach (var result in results)

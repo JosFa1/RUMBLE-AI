@@ -69,9 +69,27 @@ def status_lines(status: Dict[str, Any] | None, config: TrainerClientConfig, las
         f"Bridge running: {yes_no(status.get('bridgeRunning'))}",
         f"Scene ready: {yes_no(status.get('sceneReady'))}",
         f"Player root found: {yes_no(status.get('playerRootFound'))}",
+        f"Bootstrap stage: {status.get('bootstrapStage') or 'unknown'}",
+        f"Bootstrap ready: {yes_no(status.get('bootstrapReady'))}",
+        f"Bootstrap failed: {yes_no(status.get('bootstrapFailed'))}",
+        f"Bootstrap failure: {status.get('bootstrapFailureReason') or 'none'}",
+        f"Gym loaded: {yes_no(status.get('gymLoaded'))}",
+        f"Loader removed: {yes_no(status.get('loaderRemoved'))}",
+        f"Loader inert: {yes_no(status.get('loaderInert'))}",
+        f"Primary actor found: {yes_no(status.get('primaryActorFound'))}",
+        f"Arena built: {yes_no(status.get('arenaBuilt'))}",
+        f"Active scene: {status.get('activeScene') or 'unknown'}",
+        f"Loaded scenes: {format_loaded_scenes(status.get('loadedScenes'))}",
+        f"Actor discovery: {status.get('actorDiscoveryStatus') or 'unknown'}",
+        f"Capability discovery: {status.get('capabilityDiscoveryStatus') or 'unknown'}",
+        f"Summon probe: {status.get('summonProbeStatus') or 'unknown'}",
+        f"Move probe: {status.get('moveProbeStatus') or 'unknown'}",
+        f"Multi-actor probe: {status.get('multiActorProbeStatus') or 'unknown'}",
+        f"Interaction probe: {status.get('actorInteractionProbeStatus') or 'unknown'}",
         f"Source scene: {status.get('sourceSceneName') or 'unknown'}",
         f"Training scene: {status.get('trainingSceneName') or 'unknown'}",
         f"Actor: {status.get('actorName') or status.get('playerRootPath') or 'unknown'}",
+        f"Latest dump: {status.get('latestDumpPath') or latest_dump_path(status)}",
         f"Episode id: {status.get('episodeId', 'unknown')}",
         f"Episode step: {status.get('episodeStep', 'unknown')}",
         f"Tick: {status.get('tick', 'unknown')}",
@@ -81,6 +99,21 @@ def status_lines(status: Dict[str, Any] | None, config: TrainerClientConfig, las
         f"Last error: {status.get('lastError') or error_message(status) or 'none'}",
         f"Last run log: {last_log if last_log else 'none'}",
     ]
+
+
+def latest_dump_path(status: Dict[str, Any]) -> str:
+    paths = status.get("latestDumpPaths")
+    if isinstance(paths, list) and paths:
+        return str(paths[-1])
+    return "none"
+
+
+def format_loaded_scenes(value: Any) -> str:
+    if not isinstance(value, list) or not value:
+        return "unknown"
+    names = [str(item) for item in value[:6]]
+    suffix = "" if len(value) <= 6 else f" (+{len(value) - 6} more)"
+    return ", ".join(names) + suffix
 
 
 def observation_lines(response_or_observation: Dict[str, Any]) -> list[str]:
@@ -129,6 +162,21 @@ def step_lines(response: Dict[str, Any], action_label: str = "step") -> list[str
         f"Error: {error_message(response) or 'none'}",
     ]
     return lines
+
+
+def bootstrap_result_lines(response: Dict[str, Any]) -> list[str]:
+    if not isinstance(response, dict):
+        return ["Bootstrap request: missing response"]
+    return [
+        f"Request: {response.get('requestType', 'unknown')}",
+        f"Succeeded: {yes_no(response.get('succeeded'))}",
+        f"Status: {response.get('status') or 'unknown'}",
+        f"Bootstrap stage: {response.get('bootstrapStage') or 'unknown'}",
+        f"Bootstrap ready: {yes_no(response.get('bootstrapReady'))}",
+        f"Bootstrap failed: {yes_no(response.get('bootstrapFailed'))}",
+        f"Report path: {response.get('reportPath') or latest_dump_path(response) or 'none'}",
+        f"Message: {response.get('message') or error_message(response) or 'none'}",
+    ]
 
 
 def hand_positions_changed(response: Dict[str, Any]) -> str:

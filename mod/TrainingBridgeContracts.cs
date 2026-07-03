@@ -17,6 +17,46 @@ internal sealed class TrainingBridgeErrorInfo
     public Dictionary<string, object> details { get; set; }
 }
 
+internal sealed class TrainingBridgeBootstrapActions
+{
+    public System.Func<string, TrainingBridgeBootstrapActionResult> GetBootstrapReport { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RetryBootstrap { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunSceneInventory { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunActorDiscovery { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunCapabilityDiscovery { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunSingleActorSummonProbe { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunMoveProbe { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunMultiActorProbe { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunActorInteractionProbe { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunArenaRebuild { get; set; }
+}
+
+internal sealed class TrainingBridgeBootstrapActionResult
+{
+    public bool Succeeded { get; set; }
+    public string Status { get; set; }
+    public string ReportPath { get; set; }
+    public string Message { get; set; }
+    public string ErrorCode { get; set; }
+}
+
+internal sealed class TrainingBridgeBootstrapResponse
+{
+    public string type { get; set; }
+    public string protocolVersion { get; set; }
+    public string requestType { get; set; }
+    public bool succeeded { get; set; }
+    public string status { get; set; }
+    public string bootstrapStage { get; set; }
+    public bool bootstrapReady { get; set; }
+    public bool bootstrapFailed { get; set; }
+    public string reportPath { get; set; }
+    public string message { get; set; }
+    public List<string> latestDumpPaths { get; set; }
+    public TrainingBridgeStatus bootstrapStatus { get; set; }
+    public TrainingBridgeErrorInfo error { get; set; }
+}
+
 internal sealed class TrainingBridgeObservationResponse
 {
     public string type { get; set; }

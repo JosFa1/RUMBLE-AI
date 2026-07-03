@@ -19,9 +19,9 @@ The server only binds to loopback.
 ## Runtime scene behavior
 
 - The mod creates a dedicated `AI_Train_Training` scene at runtime.
-- In no-headset PC sessions, the mod directly loads the game's built-in `Gym` scene after the normal loader does not advance.
-- The training actor is the Gym-spawned player-controller root. The Loader actor is never accepted as the Gym training actor.
-- Gym scene geometry, lighting, probes, and VFX are moved with the actor into the stripped runtime scene.
+- In no-headset PC sessions, the staged bootstrap loads the game's built-in `Gym` scene additively after the normal Loader does not advance.
+- The verified training actor is the Loader-created `BootLoaderPlayer`. It is preserved before Loader cleanup, validated through strong `PlayerController` plus distinct head/hand evidence, and then moved into the training scene.
+- Required Gym geometry, lighting, probes, floor, and support roots remain in Gym. The arena builder moves the actor, preserves classified support/environment roots, and removes only explicit clutter.
 - A PC spectator camera is managed by the mod for observation; it is not part of the wire protocol.
 
 ## Protocol version
@@ -46,6 +46,16 @@ Implemented requests:
 - `reset_episode`
 - `step`
 - `debug_probe`
+- `get_bootstrap_report`
+- `retry_bootstrap`
+- `run_scene_inventory`
+- `run_actor_discovery`
+- `run_capability_discovery`
+- `run_single_actor_summon_probe`
+- `run_move_probe`
+- `run_multi_actor_probe`
+- `run_actor_interaction_probe`
+- `run_arena_rebuild`
 
 Examples:
 
@@ -110,6 +120,8 @@ Successful response:
 
 `debug_probe` is local-only and is intended for discovery work on the training scene. It returns a structured report of likely summon, kick, camera, and test-loop entry points, plus any coroutine-backed test sequence that was started.
 
+Bootstrap diagnostic requests are local-only operator controls. `get_bootstrap_report` returns the cached staged bootstrap state. `retry_bootstrap` clears a non-ready staged failure and restarts at `InitialInventory`; it is a no-op with `already_ready` when the environment is already usable. `run_scene_inventory`, `run_actor_discovery`, and `run_capability_discovery` enqueue passive Unity-main-thread report generation and write the corresponding dump files. The summon, move, multi-actor, and interaction requests are config-gated and return `disabled_by_config` without side effects by default. When enabled, a request may return `running`; poll `status` until the corresponding probe status changes, then inspect the reported timestamped file and its `latest_*.json` alias. Summon success requires observed structure-like object evidence, move success requires measured actor displacement, and multi-actor feasibility currently confirms only a dummy target. Interaction distinguishes direct Unity collision/trigger callbacks from weaker paired collider-bounds overlap; none of these contact levels confirms damage or game combat. `run_arena_rebuild` is a manual arena build/rebuild request and should be used only during validation.
+
 ## Response shape
 
 Successful responses use a consistent top-level shape:
@@ -157,6 +169,28 @@ Response:
   "actorName": "Player Controller(Clone)",
   "playerRootPath": "Player Controller(Clone)",
   "playerRootFound": true,
+  "bootstrapStage": "Ready",
+  "bootstrapReady": true,
+  "bootstrapFailed": false,
+  "bootstrapFailureReason": null,
+  "gymLoaded": true,
+  "loaderRemoved": true,
+  "loaderInert": false,
+  "primaryActorFound": true,
+  "arenaBuilt": true,
+  "activeScene": "AI_Train_Training",
+  "loadedScenes": ["Gym", "AI_Train_Training"],
+  "actorDiscoveryStatus": "confirmed",
+  "capabilityDiscoveryStatus": "complete",
+  "summonProbeStatus": "not_run",
+  "moveProbeStatus": "not_run",
+  "multiActorProbeStatus": "not_run",
+  "actorInteractionProbeStatus": "not_run",
+  "latestDumpPath": "UserData\\AI_Train\\Dumps\\bootstrap_stage_20260703_120000_Ready.json",
+  "latestDumpPaths": [
+    "UserData\\AI_Train\\Dumps\\scene_bundle_20260703_115959.json",
+    "UserData\\AI_Train\\Dumps\\bootstrap_stage_20260703_120000_Ready.json"
+  ],
   "episodeId": 7,
   "episodeStep": 0,
   "tick": 12345,
@@ -168,7 +202,7 @@ Response:
 }
 ```
 
-`status` is a snapshot of cached bridge and environment state. It includes bridge telemetry for the most recent request and does not touch Unity objects outside the manager's cached telemetry.
+`status` is a snapshot of cached bridge and environment state. It includes bridge telemetry for the most recent request and staged bootstrap telemetry such as the current stage, loaded scenes, Gym/load/actor/arena flags, passive discovery status, probe status, and recent dump paths. It does not touch Unity objects outside the manager's cached telemetry.
 
 ## Observation response
 

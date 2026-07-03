@@ -4,6 +4,7 @@
   "title": "Training Bridge Response v0.3",
   "oneOf": [
     { "$ref": "#/$defs/statusResponse" },
+    { "$ref": "#/$defs/bootstrapResponse" },
     { "$ref": "#/$defs/observationResponse" },
     { "$ref": "#/$defs/resetResponse" },
     { "$ref": "#/$defs/stepResponse" },
@@ -24,6 +25,25 @@
         "actorName",
         "playerRootPath",
         "playerRootFound",
+        "bootstrapStage",
+        "bootstrapReady",
+        "bootstrapFailed",
+        "bootstrapFailureReason",
+        "gymLoaded",
+        "loaderRemoved",
+        "loaderInert",
+        "primaryActorFound",
+        "arenaBuilt",
+        "activeScene",
+        "loadedScenes",
+        "actorDiscoveryStatus",
+        "capabilityDiscoveryStatus",
+        "summonProbeStatus",
+        "moveProbeStatus",
+        "multiActorProbeStatus",
+        "actorInteractionProbeStatus",
+        "latestDumpPath",
+        "latestDumpPaths",
         "episodeId",
         "episodeStep",
         "tick",
@@ -44,6 +64,31 @@
         "actorName": { "type": ["string", "null"] },
         "playerRootPath": { "type": ["string", "null"] },
         "playerRootFound": { "type": "boolean" },
+        "bootstrapStage": { "type": ["string", "null"] },
+        "bootstrapReady": { "type": "boolean" },
+        "bootstrapFailed": { "type": "boolean" },
+        "bootstrapFailureReason": { "type": ["string", "null"] },
+        "gymLoaded": { "type": "boolean" },
+        "loaderRemoved": { "type": "boolean" },
+        "loaderInert": { "type": "boolean" },
+        "primaryActorFound": { "type": "boolean" },
+        "arenaBuilt": { "type": "boolean" },
+        "activeScene": { "type": ["string", "null"] },
+        "loadedScenes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "actorDiscoveryStatus": { "type": ["string", "null"] },
+        "capabilityDiscoveryStatus": { "type": ["string", "null"] },
+        "summonProbeStatus": { "type": ["string", "null"] },
+        "moveProbeStatus": { "type": ["string", "null"] },
+        "multiActorProbeStatus": { "type": ["string", "null"] },
+        "actorInteractionProbeStatus": { "type": ["string", "null"] },
+        "latestDumpPath": { "type": ["string", "null"] },
+        "latestDumpPaths": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "episodeId": { "type": "integer" },
         "episodeStep": { "type": "integer" },
         "tick": { "type": "integer" },
@@ -52,6 +97,65 @@
         "lastReward": { "type": ["number", "null"] },
         "lastError": { "type": ["string", "null"] },
         "error": { "type": "null" }
+      }
+    },
+    "bootstrapResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "protocolVersion",
+        "requestType",
+        "succeeded",
+        "status",
+        "bootstrapStage",
+        "bootstrapReady",
+        "bootstrapFailed",
+        "reportPath",
+        "message",
+        "latestDumpPaths",
+        "bootstrapStatus",
+        "error"
+      ],
+      "properties": {
+        "type": { "const": "bootstrap_result" },
+        "protocolVersion": { "type": "string" },
+        "requestType": {
+          "enum": [
+            "get_bootstrap_report",
+            "run_scene_inventory",
+            "run_actor_discovery",
+            "run_capability_discovery",
+            "run_single_actor_summon_probe",
+            "run_move_probe",
+            "run_multi_actor_probe",
+            "run_actor_interaction_probe",
+            "run_arena_rebuild"
+          ]
+        },
+        "succeeded": { "type": "boolean" },
+        "status": { "type": ["string", "null"] },
+        "bootstrapStage": { "type": ["string", "null"] },
+        "bootstrapReady": { "type": "boolean" },
+        "bootstrapFailed": { "type": "boolean" },
+        "reportPath": { "type": ["string", "null"] },
+        "message": { "type": ["string", "null"] },
+        "latestDumpPaths": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "bootstrapStatus": {
+          "anyOf": [
+            { "$ref": "#/$defs/statusResponse" },
+            { "type": "null" }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            { "$ref": "#/$defs/errorInfo" },
+            { "type": "null" }
+          ]
+        }
       }
     },
     "observationResponse": {

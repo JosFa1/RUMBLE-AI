@@ -43,7 +43,7 @@ python scripts/operator_console.py --verbose
 
 `--verbose` prints raw JSON after the concise summaries. The default keeps output compact so the operator can see status, readiness, player-root state, rewards, errors, and run-log paths without digging through large payloads.
 
-The console menu can connect and status-check, get observations, reset, send one safe step, run a scripted pose sequence, run a random policy test, run a short stability test, run offline or full validation, show config, edit basic config, print the latest run folder, and show troubleshooting help.
+The console menu can connect and status-check, get observations, reset, send one safe step, run a scripted pose sequence, run a random policy test, run a short stability test, run offline or full validation, run bootstrap diagnostics, show config, edit basic config, print the latest run folder, and show troubleshooting help.
 
 ## Start the bridge
 
@@ -117,6 +117,14 @@ Paths stored in metadata are relative to `trainer-client/`, so generated logs no
 
 - `sceneReady`: the mod has built the runtime training scene.
 - `playerRootFound`: actor discovery found the player root accepted for training.
+- `bootstrapStage`: the staged bootstrap state, such as `InitialInventory`, `WaitForGymLoaded`, `BuildMinimalArena`, `Ready`, or `Failed`.
+- `bootstrapReady` and `bootstrapFailed`: whether the staged bootstrap reached a usable state or a terminal failure.
+- `bootstrapFailureReason`: the concrete failure reason reported by the staged orchestrator when it fails.
+- `gymLoaded`, `loaderRemoved`, `loaderInert`, `primaryActorFound`, and `arenaBuilt`: milestone flags from the staged bootstrap pipeline.
+- `activeScene` and `loadedScenes`: current scene inventory summary reported by the staged bootstrap.
+- `actorDiscoveryStatus` and `capabilityDiscoveryStatus`: passive discovery progress before arena build.
+- `summonProbeStatus`, `moveProbeStatus`, `multiActorProbeStatus`, and `actorInteractionProbeStatus`: probe states. Normal startup leaves them `not_run`; default-off requests report `disabled_by_config`, and manually enabled probes report their evidence-backed outcome.
+- `latestDumpPath` and `latestDumpPaths`: recent mod dump files to inspect after startup or failure, including scene inventory, actor discovery, and capability discovery reports when those stages have run.
 - `protocolVersion`: server protocol version; expected client value is in `config.json`.
 - `episodeId` and `episodeStep`: current episode counters.
 - `lastError`: last manager or bridge error exposed by the mod when available.
@@ -125,6 +133,8 @@ Paths stored in metadata are relative to `trainer-client/`, so generated logs no
 
 - Connection refused: RUMBLE is not running, the mod did not load, or the bridge is not listening on the configured host and port.
 - Protocol mismatch: config, docs, schemas, and mod code are not aligned on `0.3`.
+- `bootstrapFailed=true`: inspect `bootstrapFailureReason`, `latestDumpPath`, and the `UserData/AI_Train/Dumps/bootstrap_stage_*.json` files. For discovery failures, also inspect `latest_actor_discovery.json` and `latest_capability_discovery.json`.
+- `bootstrapReady=false`: wait for the current `bootstrapStage` to advance, then inspect stage dumps if it stalls.
 - `sceneReady=false`: the training scene has not been built yet.
 - `playerRootFound=false`: the actor locator did not find a suitable player root.
 - Timeout: the bridge accepted a request but the game did not complete the work within the configured timeout.
@@ -156,6 +166,7 @@ python scripts/run_full_validation.py
 Expected result:
 
 - `status` reports `sceneReady=true` and `playerRootFound=true`
+- `status` reports `bootstrapStage=Ready`, `bootstrapReady=true`, `gymLoaded=true`, `primaryActorFound=true`, and `arenaBuilt=true`
 - malformed, empty, and unknown requests return safe protocol errors
 - `reset_episode` returns `episodeStep=0`
 - safe `step` returns a finite reward and a realistic `elapsedMs`

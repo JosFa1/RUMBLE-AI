@@ -30,6 +30,27 @@ EXIT_ACTION_FAILURE = 14
 EXIT_REWARD_FAILURE = 15
 EXIT_RESET_FAILURE = 16
 EXIT_STABILITY_FAILURE = 17
+BOOTSTRAP_STATUS_FIELDS = {
+    "bootstrapStage",
+    "bootstrapReady",
+    "bootstrapFailed",
+    "bootstrapFailureReason",
+    "gymLoaded",
+    "loaderRemoved",
+    "loaderInert",
+    "primaryActorFound",
+    "arenaBuilt",
+    "activeScene",
+    "loadedScenes",
+    "actorDiscoveryStatus",
+    "capabilityDiscoveryStatus",
+    "summonProbeStatus",
+    "moveProbeStatus",
+    "multiActorProbeStatus",
+    "actorInteractionProbeStatus",
+    "latestDumpPath",
+    "latestDumpPaths",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -165,6 +186,172 @@ def main() -> int:
         )
 
     print_json("status", status)
+    missing_bootstrap_fields = sorted(field for field in BOOTSTRAP_STATUS_FIELDS if field not in status)
+    if missing_bootstrap_fields:
+        return finalize_failure(
+            logger,
+            report_path,
+            report,
+            EXIT_PROTOCOL_FAILURE,
+            "protocol_failure",
+            f"Status response is missing bootstrap fields: {', '.join(missing_bootstrap_fields)}.",
+        )
+    report["checks"].append({
+        "name": "bootstrap_status",
+        "stage": status.get("bootstrapStage"),
+        "ready": status.get("bootstrapReady"),
+        "failed": status.get("bootstrapFailed"),
+        "failureReason": status.get("bootstrapFailureReason"),
+    })
+    if status.get("bootstrapFailed"):
+        return finalize_failure(
+            logger,
+            report_path,
+            report,
+            EXIT_SCENE_NOT_READY,
+            "bootstrap_failed",
+            f"Staged bootstrap failed at {status.get('bootstrapStage')}: {status.get('bootstrapFailureReason') or 'no failure reason reported'}.",
+        )
+    if not status.get("bootstrapReady") and not status.get("sceneReady"):
+        return finalize_failure(
+            logger,
+            report_path,
+            report,
+            EXIT_SCENE_NOT_READY,
+            "bootstrap_not_ready",
+            f"Staged bootstrap is not ready: stage={status.get('bootstrapStage') or 'unknown'}.",
+        )
+    missing_milestones = []
+    if not status.get("gymLoaded"):
+        missing_milestones.append("gymLoaded")
+    if not (status.get("loaderRemoved") or status.get("loaderInert")):
+        missing_milestones.append("loaderRemoved|loaderInert")
+    if not status.get("primaryActorFound"):
+        missing_milestones.append("primaryActorFound")
+    if not status.get("arenaBuilt"):
+        missing_milestones.append("arenaBuilt")
+    if missing_milestones:
+        return finalize_failure(
+            logger,
+            report_path,
+            report,
+            EXIT_SCENE_NOT_READY,
+            "bootstrap_milestones_missing",
+            f"Ready bootstrap is missing milestones: {', '.join(missing_milestones)}.",
+        )
+
+    latest_dump_paths = [
+        Path(value)
+        for value in status.get("latestDumpPaths", [])
+        if isinstance(value, str) and value
+    ]
+    required_dump_prefixes = {
+        "scene_inventory_": False,
+        "actor_discovery_": False,
+        "capability_discovery_": False,
+        "arena_build_report_": False,
+    }
+    selected_dump_paths: Dict[str, Path] = {}
+    missing_dump_files = []
+    for dump_path in latest_dump_paths:
+        if not dump_path.exists():
+            missing_dump_files.append(str(dump_path))
+            continue
+        for prefix in required_dump_prefixes:
+            if dump_path.name.startswith(prefix):
+                required_dump_prefixes[prefix] = True
+                selected_dump_paths[prefix] = dump_path
+    missing_dump_types = [
+        prefix for prefix, found in required_dump_prefixes.items() if not found
+    ]
+    report["checks"].append({
+        "name": "bootstrap_dumps",
+        "paths": [str(path) for path in latest_dump_paths],
+        "missingFiles": missing_dump_files,
+        "missingTypes": missing_dump_types,
+    })
+    if missing_dump_files or missing_dump_types:
+        details = []
+        if missing_dump_files:
+            details.append(f"missing files: {', '.join(missing_dump_files)}")
+        if missing_dump_types:
+            details.append(f"missing dump types: {', '.join(missing_dump_types)}")
+        return finalize_failure(
+            logger,
+            report_path,
+            report,
+            EXIT_SCENE_NOT_READY,
+            "bootstrap_dumps_missing",
+            "Bootstrap dump verification failed: " + "; ".join(details) + ".",
+        )
+
+    parsed_dumps: Dict[str, Dict[str, Any]] = {}
+    invalid_dump_files = []
+    for prefix, dump_path in selected_dump_paths.items():
+        try:
+            payload = json.loads(dump_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("top-level JSON value is not an object")
+            parsed_dumps[prefix] = payload
+        except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+            invalid_dump_files.append(f"{dump_path}: {exc}")
+
+    scene_inventory = parsed_dumps.get("scene_inventory_", {})
+    actor_discovery = parsed_dumps.get("actor_discovery_", {})
+    capability_discovery = parsed_dumps.get("capability_discovery_", {})
+    arena_report = parsed_dumps.get("arena_build_report_", {})
+    floor_report = arena_report.get("floor")
+    if not isinstance(floor_report, dict):
+        floor_report = {}
+
+    dump_content_failures = []
+    scenes = scene_inventory.get("scenes")
+    if not isinstance(scenes, list) or not scenes:
+        dump_content_failures.append("scene inventory has no scenes")
+    if scene_inventory.get("activeScene") != status.get("activeScene"):
+        dump_content_failures.append("scene inventory activeScene disagrees with status")
+    if actor_discovery.get("actorValidated") is not True:
+        dump_content_failures.append("actor discovery is not validated")
+    for transform_field in ("headPath", "leftHandPath", "rightHandPath"):
+        if not actor_discovery.get(transform_field):
+            dump_content_failures.append(f"actor discovery is missing {transform_field}")
+    if capability_discovery.get("passiveOnly") is not True:
+        dump_content_failures.append("capability discovery is not marked passiveOnly")
+    if not isinstance(capability_discovery.get("candidates"), list) or not capability_discovery.get("candidates"):
+        dump_content_failures.append("capability discovery has no candidates")
+    if arena_report.get("managerInitialized") is not True:
+        dump_content_failures.append("arena report managerInitialized is not true")
+    if floor_report.get("usableFloorConfirmed") is not True:
+        dump_content_failures.append("arena floor usableFloorConfirmed is not true")
+
+    report["checks"].append({
+        "name": "bootstrap_dump_content",
+        "invalidFiles": invalid_dump_files,
+        "failures": dump_content_failures,
+        "sceneCount": len(scenes) if isinstance(scenes, list) else 0,
+        "actorValidated": actor_discovery.get("actorValidated"),
+        "headPath": actor_discovery.get("headPath"),
+        "leftHandPath": actor_discovery.get("leftHandPath"),
+        "rightHandPath": actor_discovery.get("rightHandPath"),
+        "passiveCapabilityDiscovery": capability_discovery.get("passiveOnly"),
+        "capabilityCandidateCount": len(capability_discovery.get("candidates", []))
+        if isinstance(capability_discovery.get("candidates"), list)
+        else 0,
+        "managerInitialized": arena_report.get("managerInitialized"),
+        "usableFloorConfirmed": floor_report.get("usableFloorConfirmed"),
+        "floorSupportProbeStatus": floor_report.get("supportProbeStatus"),
+    })
+    if invalid_dump_files or dump_content_failures:
+        return finalize_failure(
+            logger,
+            report_path,
+            report,
+            EXIT_SCENE_NOT_READY,
+            "bootstrap_dump_content_invalid",
+            "Bootstrap dump content verification failed: "
+            + "; ".join(invalid_dump_files + dump_content_failures)
+            + ".",
+        )
     if not status.get("sceneReady"):
         return finalize_failure(logger, report_path, report, EXIT_SCENE_NOT_READY, "scene_not_ready", "Bridge reported sceneReady=false.")
     if not status.get("playerRootFound"):

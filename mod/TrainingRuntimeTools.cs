@@ -30,6 +30,35 @@ internal sealed class TrainingRuntimeHost : MonoBehaviour
     }
 }
 
+internal sealed class TrainingProbeCollisionRecorder : MonoBehaviour
+{
+    public TrainingProbeCollisionRecorder(IntPtr ptr) : base(ptr)
+    {
+    }
+
+    public int CollisionEnterCount { get; private set; }
+    public string LastOtherName { get; private set; }
+    public Vector3 LastContactPoint { get; private set; }
+    public int TriggerEnterCount { get; private set; }
+    public string LastTriggerOtherName { get; private set; }
+
+    public void OnCollisionEnter(Collision collision)
+    {
+        CollisionEnterCount++;
+        LastOtherName = collision?.gameObject != null ? collision.gameObject.name : null;
+        if (collision != null && collision.contactCount > 0)
+        {
+            LastContactPoint = collision.GetContact(0).point;
+        }
+    }
+
+    public void OnTriggerEnter(Collider other)
+    {
+        TriggerEnterCount++;
+        LastTriggerOtherName = other?.gameObject != null ? other.gameObject.name : null;
+    }
+}
+
 internal sealed class TrainingMonitorCamera : IDisposable
 {
     private readonly Action<string> _logInfo;

@@ -17,7 +17,7 @@ cd trainer-client
 python scripts/operator_console.py
 ```
 
-The console is the recommended operator app. It can check bridge status, show observation summaries, reset, send a safe step, run scripted and random tests, run validation, edit basic config, and print the latest run folder path.
+The console is the recommended operator app. It can check bridge status, show observation summaries, reset, send a safe step, run scripted and random tests, run validation, run bootstrap diagnostics, edit basic config, and print the latest run folder path.
 
 ## What do I run?
 
@@ -29,18 +29,20 @@ Run `python scripts/operator_console.py` for normal human operation. Use the ind
 - `trainer-client/`: Python operator console, client package, probes, rollout scripts, validation scripts, config, and run logs
 - `protocol/`: transport documentation, schemas, and the manual validation checklist
 - `docs/project-map.md`: short architecture map of the current workspace
+- `docs/ai-bootstrap-rework-notes.md`: staged bootstrap audit, implementation, and acceptance evidence
+- `docs/ai-bootstrap-knowledge.md`: claim-labeled facts and remaining exploration goals for AI continuation
 - `docs/cleanup-report.md`: cleanup status, retained scripts, ignored files, and next phase notes
 
 ## Current status
 
-The project is an environment and validation bridge, not an ML training stack. The operator console is the main app, protocol version `0.3` is current, generated runs are ignored, and offline validation should pass without RUMBLE running. Full validation still requires a live RUMBLE session with the mod bridge listening on loopback.
+The project is an environment and validation bridge, not an ML training stack. The staged bootstrap is the default owner, protocol version `0.3` is current, generated runs are ignored, and offline validation passes without RUMBLE running. A live normal-mode run has reached `Ready` with Gym loaded, Loader removed, `BootLoaderPlayer` registered, the minimal arena built, and the full validation suite passing. Reproducing that result still requires a local RUMBLE session with the mod bridge listening on loopback.
 
 ## Build the mod
 
 Canonical build command:
 
 ```powershell
-dotnet build mod\AI_Train.csproj
+dotnet build mod\AI_Train.csproj -c Debug
 ```
 
 Requirements:
@@ -112,19 +114,24 @@ The full manual operator flow lives in `protocol/manual-validation-checklist.md`
 
 The operator console prints the latest run folder path. Generated logs live under `trainer-client/runs/` and are ignored by git except for `.gitkeep`.
 
+The mod writes staged bootstrap evidence under `UserData\AI_Train\Dumps\`, including `bootstrap_stage_*.json`, scene/actor/capability/arena reports, gated probe reports, `scene_bundle_*.json`, and `training_status_*.json`.
+
 ## Troubleshooting
 
 - If the console reports connection refused, start RUMBLE with the mod installed and wait for `TrainingBridgeServer listening on 127.0.0.1:8765`.
+- If `bootstrapFailed=true`, inspect `bootstrapFailureReason`, `latestDumpPath`, and the latest `bootstrap_stage_*.json`.
+- If `bootstrapReady=false`, wait for `bootstrapStage` to advance or inspect the latest stage dump if it stalls.
 - If `sceneReady=false`, wait for the Gym scene setup or inspect `TrainingEnvironmentManager` log lines.
-- If `playerRootFound=false`, inspect actor discovery in `TrainingActorLocator` and the current scene logs.
+- If `playerRootFound=false`, inspect `latest_actor_discovery.json` and the current scene logs.
 - If protocol warnings appear, keep the mod, `trainer-client/config.json`, docs, and schemas aligned on protocol `0.3`.
 
 ## Known limitations
 
-- The bridge is single-scene, single-actor, and single-step-at-a-time.
+- The bridge registers one primary actor and processes one step at a time.
 - Reset remains a partial actor reset; the player root is preserved.
 - Reward shaping is meant for bridge validation, not final training quality.
-- Live game validation still depends on a local RUMBLE install and a working mod loader environment.
+- The preserved bootstrap actor currently exposes no live health, movement, or configured summon component.
+- Full second-actor support, real summon/modifier execution, and combat damage remain unconfirmed.
 
 ## What not to do yet
 
@@ -135,15 +142,16 @@ The operator console prints the latest run folder path. Generated logs live unde
 
 ## Next recommended work
 
-Run full validation from the operator against a live RUMBLE session, then do a narrow live-informed mod cleanup pass focused on debug logging, transform lookup caching, and response-creation consistency.
+Discover or transition to a complete local-player actor state with movement, health, gesture, summon, and ownership systems while preserving the now-green staged bootstrap. Re-run passive actor/capability discovery first, then enable only the next bounded summon or movement probe justified by that evidence.
 
-## What “done” means for this stage
+## What "done" means for this stage
 
 This stage is complete when:
 
 - generated run outputs and build artifacts are not tracked
 - protocol docs, schemas, mod code, and Python config all agree on protocol version `0.3`
 - `status`, `get_observation`, `reset_episode`, and `step` behave consistently
+- `status` exposes `bootstrapStage`, `bootstrapReady`, `bootstrapFailed`, loaded scenes, Gym/actor/arena milestone flags, discovery/probe statuses, and latest dump paths
 - `step` blocks until the requested action window completes, or returns a safe protocol error
 - offline validation passes from a clean checkout
 - the human operator can reproduce live validation with the documented commands

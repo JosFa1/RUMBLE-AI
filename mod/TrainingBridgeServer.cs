@@ -26,10 +26,12 @@ internal sealed class TrainingBridgeServer : IDisposable
     private readonly ObservationBuilder _observationBuilder;
     private readonly ActionExecutor _actionExecutor;
     private readonly TrainingExplorationService _explorationService;
+    private readonly TrainingBridgeBootstrapActions _bootstrapActions;
     private readonly ConcurrentQueue<PendingObservationRequest> _observationRequests = new();
     private readonly ConcurrentQueue<PendingStepRequest> _stepRequests = new();
     private readonly ConcurrentQueue<PendingResetRequest> _resetRequests = new();
     private readonly ConcurrentQueue<PendingDebugProbeRequest> _debugProbeRequests = new();
+    private readonly ConcurrentQueue<PendingBootstrapRequest> _bootstrapRequests = new();
     private readonly object _gate = new();
     private readonly object _debugGate = new();
     private readonly JsonSerializerOptions _jsonOptions = new()
@@ -55,6 +57,7 @@ internal sealed class TrainingBridgeServer : IDisposable
         ObservationBuilder observationBuilder,
         ActionExecutor actionExecutor,
         TrainingExplorationService explorationService,
+        TrainingBridgeBootstrapActions bootstrapActions,
         Action<string> logInfo,
         Action<string> logWarn,
         Action<string> logError)
@@ -63,6 +66,7 @@ internal sealed class TrainingBridgeServer : IDisposable
         _observationBuilder = observationBuilder;
         _actionExecutor = actionExecutor;
         _explorationService = explorationService;
+        _bootstrapActions = bootstrapActions ?? new TrainingBridgeBootstrapActions();
         _logInfo = logInfo ?? (_ => { });
         _logWarn = logWarn ?? (_ => { });
         _logError = logError ?? (_ => { });
@@ -81,7 +85,7 @@ internal sealed class TrainingBridgeServer : IDisposable
 
     public void StartIfNeeded()
     {
-        if (_disposed || _manager == null || !_manager.IsReady)
+        if (_disposed || _manager == null)
         {
             return;
         }
@@ -142,6 +146,11 @@ internal sealed class TrainingBridgeServer : IDisposable
         while (_debugProbeRequests.TryDequeue(out var pendingDebugProbe))
         {
             ProcessPendingDebugProbe(pendingDebugProbe);
+        }
+
+        while (_bootstrapRequests.TryDequeue(out var pendingBootstrap))
+        {
+            ProcessPendingBootstrapRequest(pendingBootstrap);
         }
 
         MaybeLogDebugSummary("pump");
@@ -338,6 +347,25 @@ internal sealed class TrainingBridgeServer : IDisposable
                         lastRequestType = null,
                         lastReward = null,
                         lastError = "manager_unavailable",
+                        bootstrapStage = "Unavailable",
+                        bootstrapReady = false,
+                        bootstrapFailed = true,
+                        bootstrapFailureReason = "manager_unavailable",
+                        gymLoaded = false,
+                        loaderRemoved = false,
+                        loaderInert = false,
+                        primaryActorFound = false,
+                        arenaBuilt = false,
+                        activeScene = null,
+                        loadedScenes = new List<string>(),
+                        actorDiscoveryStatus = "not_run",
+                        capabilityDiscoveryStatus = "not_run",
+                        summonProbeStatus = "not_run",
+                        moveProbeStatus = "not_run",
+                        multiActorProbeStatus = "not_run",
+                        actorInteractionProbeStatus = "not_run",
+                        latestDumpPath = null,
+                        latestDumpPaths = new List<string>(),
                         error = null
                     };
                     RecordRequestOutcome("status", null, null);
@@ -390,6 +418,14 @@ internal sealed class TrainingBridgeServer : IDisposable
                     var responseJson = await RequestDebugProbeAsync(cancellationToken).ConfigureAwait(false);
                     await writer.WriteLineAsync(responseJson).ConfigureAwait(false);
                     MaybeLogDebugSummary("debug_probe");
+                    return;
+                }
+
+                if (IsBootstrapRequest(requestType))
+                {
+                    var responseJson = await RequestBootstrapAsync(requestType, cancellationToken).ConfigureAwait(false);
+                    await writer.WriteLineAsync(responseJson).ConfigureAwait(false);
+                    MaybeLogDebugSummary(requestType);
                     return;
                 }
 
@@ -574,6 +610,43 @@ internal sealed class TrainingBridgeServer : IDisposable
             pending.TrySetTimeout();
             RecordRequestOutcome("debug_probe", "debug_probe_timeout", null);
             return CreateDebugProbeErrorResponse("debug_probe", "debug_probe_timeout", "Debug probe request timed out.");
+        }
+
+        return await pending.Completion.Task.ConfigureAwait(false);
+    }
+
+    private async Task<string> RequestBootstrapAsync(string requestType, CancellationToken cancellationToken)
+    {
+        if (_disposed)
+        {
+            _logWarn($"TrainingBridgeServer rejected bootstrap request '{requestType}': bridge disposed.");
+            RecordRequestOutcome(requestType, "bridge_disposed", null);
+            return CreateBootstrapResponse(requestType, new TrainingBridgeBootstrapActionResult
+            {
+                Succeeded = false,
+                Status = "failed",
+                ErrorCode = "bridge_disposed",
+                Message = "Bridge is shutting down."
+            });
+        }
+
+        var pending = new PendingBootstrapRequest(requestType);
+        _bootstrapRequests.Enqueue(pending);
+
+        var delayTask = Task.Delay(RequestTimeoutMilliseconds, cancellationToken);
+        var completed = await Task.WhenAny(pending.Completion.Task, delayTask).ConfigureAwait(false);
+        if (completed != pending.Completion.Task)
+        {
+            _logWarn($"TrainingBridgeServer bootstrap request '{requestType}' timed out.");
+            pending.TrySetTimeout();
+            RecordRequestOutcome(requestType, "bootstrap_request_timeout", null);
+            return CreateBootstrapResponse(requestType, new TrainingBridgeBootstrapActionResult
+            {
+                Succeeded = false,
+                Status = "timeout",
+                ErrorCode = "bootstrap_request_timeout",
+                Message = "Bootstrap request timed out."
+            });
         }
 
         return await pending.Completion.Task.ConfigureAwait(false);
@@ -965,6 +1038,117 @@ internal sealed class TrainingBridgeServer : IDisposable
         }
     }
 
+    private void ProcessPendingBootstrapRequest(PendingBootstrapRequest pending)
+    {
+        if (pending == null || pending.IsCompleted)
+        {
+            return;
+        }
+
+        var requestType = pending.RequestType ?? "unknown";
+        try
+        {
+            var result = RunBootstrapAction(requestType);
+            pending.TrySetResult(CreateBootstrapResponse(requestType, result));
+            RecordRequestOutcome(requestType, result?.ErrorCode, null);
+        }
+        catch (Exception ex)
+        {
+            _logError($"TrainingBridgeServer bootstrap request '{requestType}' failed: {ex.Message}");
+            pending.TrySetResult(CreateBootstrapResponse(requestType, new TrainingBridgeBootstrapActionResult
+            {
+                Succeeded = false,
+                Status = "failed",
+                ErrorCode = "internal_error",
+                Message = "An unexpected bridge error occurred."
+            }));
+            RecordRequestOutcome(requestType, "internal_error", null);
+        }
+    }
+
+    private TrainingBridgeBootstrapActionResult RunBootstrapAction(string requestType)
+    {
+        if (string.Equals(requestType, "get_bootstrap_report", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.GetBootstrapReport);
+        }
+
+        if (string.Equals(requestType, "retry_bootstrap", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RetryBootstrap);
+        }
+
+        if (string.Equals(requestType, "run_scene_inventory", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunSceneInventory);
+        }
+
+        if (string.Equals(requestType, "run_actor_discovery", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunActorDiscovery);
+        }
+
+        if (string.Equals(requestType, "run_capability_discovery", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunCapabilityDiscovery);
+        }
+
+        if (string.Equals(requestType, "run_single_actor_summon_probe", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunSingleActorSummonProbe);
+        }
+
+        if (string.Equals(requestType, "run_move_probe", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunMoveProbe);
+        }
+
+        if (string.Equals(requestType, "run_multi_actor_probe", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunMultiActorProbe);
+        }
+
+        if (string.Equals(requestType, "run_actor_interaction_probe", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunActorInteractionProbe);
+        }
+
+        if (string.Equals(requestType, "run_arena_rebuild", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunArenaRebuild);
+        }
+
+        return new TrainingBridgeBootstrapActionResult
+        {
+            Succeeded = false,
+            Status = "failed",
+            ErrorCode = "unknown_bootstrap_request",
+            Message = $"Unknown bootstrap request '{requestType}'."
+        };
+    }
+
+    private static TrainingBridgeBootstrapActionResult InvokeBootstrapAction(string requestType, Func<string, TrainingBridgeBootstrapActionResult> action)
+    {
+        if (action == null)
+        {
+            return new TrainingBridgeBootstrapActionResult
+            {
+                Succeeded = false,
+                Status = "unavailable",
+                ErrorCode = "bootstrap_action_unavailable",
+                Message = $"Bootstrap action '{requestType}' is unavailable."
+            };
+        }
+
+        return action($"bridge-{requestType}") ?? new TrainingBridgeBootstrapActionResult
+        {
+            Succeeded = false,
+            Status = "failed",
+            ErrorCode = "bootstrap_action_empty_result",
+            Message = $"Bootstrap action '{requestType}' returned no result."
+        };
+    }
+
     private RequestReadResult ReadRequest(StreamReader reader)
     {
         var builder = new StringBuilder();
@@ -1150,6 +1334,67 @@ internal sealed class TrainingBridgeServer : IDisposable
         return CreateErrorResponse(requestType, errorCode, message, details);
     }
 
+    private string CreateBootstrapResponse(string requestType, TrainingBridgeBootstrapActionResult result)
+    {
+        result ??= new TrainingBridgeBootstrapActionResult
+        {
+            Succeeded = false,
+            Status = "failed",
+            ErrorCode = "bootstrap_action_empty_result",
+            Message = "Bootstrap action returned no result."
+        };
+
+        var status = _manager?.GetBridgeStatus();
+        if (status != null)
+        {
+            ApplyBridgeTelemetry(status);
+        }
+
+        var payload = new TrainingBridgeBootstrapResponse
+        {
+            type = "bootstrap_result",
+            protocolVersion = TrainingProtocol.Version,
+            requestType = requestType,
+            succeeded = result.Succeeded,
+            status = result.Status,
+            bootstrapStage = status?.bootstrapStage,
+            bootstrapReady = status?.bootstrapReady ?? false,
+            bootstrapFailed = status?.bootstrapFailed ?? false,
+            reportPath = result.ReportPath,
+            message = result.Message,
+            latestDumpPaths = status?.latestDumpPaths ?? new List<string>(),
+            bootstrapStatus = status,
+            error = string.IsNullOrWhiteSpace(result.ErrorCode)
+                ? null
+                : new TrainingBridgeErrorInfo
+                {
+                    code = result.ErrorCode,
+                    message = result.Message,
+                    details = new Dictionary<string, object>
+                    {
+                        { "requestType", requestType },
+                        { "reportPath", result.ReportPath }
+                    }
+                }
+        };
+
+        return JsonSerializer.Serialize(payload, _jsonOptions);
+    }
+
+    private static bool IsBootstrapRequest(string requestType)
+    {
+        return string.Equals(requestType, "get_bootstrap_report", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "retry_bootstrap", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_scene_inventory", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_actor_discovery", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_capability_discovery", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_single_actor_summon_probe", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_move_probe", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_multi_actor_probe", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_actor_interaction_probe", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_arena_rebuild", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static Dictionary<string, object> CreateErrorDetails(string key, string value)
     {
         return new Dictionary<string, object>
@@ -1272,6 +1517,25 @@ internal sealed class TrainingBridgeServer : IDisposable
             lastRequestType = null,
             lastReward = null,
             lastError = null,
+            bootstrapStage = "Unavailable",
+            bootstrapReady = false,
+            bootstrapFailed = true,
+            bootstrapFailureReason = "manager_unavailable",
+            gymLoaded = false,
+            loaderRemoved = false,
+            loaderInert = false,
+            primaryActorFound = false,
+            arenaBuilt = false,
+            activeScene = null,
+            loadedScenes = new List<string>(),
+            actorDiscoveryStatus = "not_run",
+            capabilityDiscoveryStatus = "not_run",
+            summonProbeStatus = "not_run",
+            moveProbeStatus = "not_run",
+            multiActorProbeStatus = "not_run",
+            actorInteractionProbeStatus = "not_run",
+            latestDumpPath = null,
+            latestDumpPaths = new List<string>(),
             error = null
         };
         ApplyBridgeTelemetry(status);
@@ -1435,6 +1699,37 @@ internal sealed class TrainingBridgeServer : IDisposable
         private readonly TaskCompletionSource<string> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _completed;
 
+        public TaskCompletionSource<string> Completion => _completion;
+        public bool IsCompleted => _completed != 0;
+
+        public void TrySetResult(string json)
+        {
+            if (Interlocked.Exchange(ref _completed, 1) == 0)
+            {
+                _completion.TrySetResult(json);
+            }
+        }
+
+        public void TrySetTimeout()
+        {
+            if (Interlocked.Exchange(ref _completed, 1) == 0)
+            {
+                _completion.TrySetResult(string.Empty);
+            }
+        }
+    }
+
+    private sealed class PendingBootstrapRequest
+    {
+        private readonly TaskCompletionSource<string> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _completed;
+
+        public PendingBootstrapRequest(string requestType)
+        {
+            RequestType = requestType;
+        }
+
+        public string RequestType { get; }
         public TaskCompletionSource<string> Completion => _completion;
         public bool IsCompleted => _completed != 0;
 

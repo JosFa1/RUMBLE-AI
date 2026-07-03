@@ -29,6 +29,25 @@ internal sealed class TrainingEnvironmentManager
     private DateTime _lastUpdatedUtc;
     private int _lastTick;
     private float _lastTimeSeconds;
+    private string _bootstrapStage = "Uninitialized";
+    private bool _bootstrapReady;
+    private bool _bootstrapFailed;
+    private string _bootstrapFailureReason;
+    private bool _bootstrapGymLoaded;
+    private bool _bootstrapLoaderRemoved;
+    private bool _bootstrapLoaderInert;
+    private bool _bootstrapPrimaryActorFound;
+    private bool _bootstrapArenaBuilt;
+    private string _bootstrapActiveScene;
+    private List<string> _bootstrapLoadedScenes = new();
+    private string _actorDiscoveryStatus = "not_run";
+    private string _capabilityDiscoveryStatus = "not_run";
+    private string _summonProbeStatus = "not_run";
+    private string _moveProbeStatus = "not_run";
+    private string _multiActorProbeStatus = "not_run";
+    private string _actorInteractionProbeStatus = "not_run";
+    private string _bootstrapLatestDumpPath;
+    private List<string> _bootstrapLatestDumpPaths = new();
 
     public TrainingEnvironmentManager(Action<string> logInfo, Action<string> logWarn, Action<string> logError)
     {
@@ -153,6 +172,38 @@ internal sealed class TrainingEnvironmentManager
         }
     }
 
+    public void UpdateBootstrapState(TrainingBootstrapState state)
+    {
+        if (state == null)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            _bootstrapStage = state.stage ?? "Unknown";
+            _bootstrapReady = state.ready;
+            _bootstrapFailed = state.failed;
+            _bootstrapFailureReason = state.failureReason;
+            _bootstrapGymLoaded = state.gymLoaded;
+            _bootstrapLoaderRemoved = state.loaderRemoved;
+            _bootstrapLoaderInert = state.loaderInert;
+            _bootstrapPrimaryActorFound = state.primaryActorFound;
+            _bootstrapArenaBuilt = state.arenaBuilt;
+            _bootstrapActiveScene = state.activeScene;
+            _bootstrapLoadedScenes = state.loadedScenes != null ? new List<string>(state.loadedScenes) : new List<string>();
+            _actorDiscoveryStatus = state.actorDiscoveryStatus ?? "unknown";
+            _capabilityDiscoveryStatus = state.capabilityDiscoveryStatus ?? "unknown";
+            _summonProbeStatus = state.summonProbeStatus ?? "unknown";
+            _moveProbeStatus = state.moveProbeStatus ?? "unknown";
+            _multiActorProbeStatus = state.multiActorProbeStatus ?? "unknown";
+            _actorInteractionProbeStatus = state.actorInteractionProbeStatus ?? "unknown";
+            _bootstrapLatestDumpPath = state.lastReportPath;
+            _bootstrapLatestDumpPaths = state.latestDumpPaths != null ? new List<string>(state.latestDumpPaths) : new List<string>();
+            _lastUpdatedUtc = DateTime.UtcNow;
+        }
+    }
+
     public TrainingEnvironmentStatus GetStatus()
     {
         lock (_gate)
@@ -174,7 +225,26 @@ internal sealed class TrainingEnvironmentManager
                 CurrentPlayerRootPath = _currentPlayerRootPath,
                 LastUpdatedUtc = _lastUpdatedUtc,
                 CurrentTick = _lastTick,
-                CurrentTimeSeconds = _lastTimeSeconds
+                CurrentTimeSeconds = _lastTimeSeconds,
+                BootstrapStage = _bootstrapStage,
+                BootstrapReady = _bootstrapReady,
+                BootstrapFailed = _bootstrapFailed,
+                BootstrapFailureReason = _bootstrapFailureReason,
+                BootstrapGymLoaded = _bootstrapGymLoaded,
+                BootstrapLoaderRemoved = _bootstrapLoaderRemoved,
+                BootstrapLoaderInert = _bootstrapLoaderInert,
+                BootstrapPrimaryActorFound = _bootstrapPrimaryActorFound,
+                BootstrapArenaBuilt = _bootstrapArenaBuilt,
+                BootstrapActiveScene = _bootstrapActiveScene,
+                BootstrapLoadedScenes = new List<string>(_bootstrapLoadedScenes),
+                ActorDiscoveryStatus = _actorDiscoveryStatus,
+                CapabilityDiscoveryStatus = _capabilityDiscoveryStatus,
+                SummonProbeStatus = _summonProbeStatus,
+                MoveProbeStatus = _moveProbeStatus,
+                MultiActorProbeStatus = _multiActorProbeStatus,
+                ActorInteractionProbeStatus = _actorInteractionProbeStatus,
+                BootstrapLatestDumpPath = _bootstrapLatestDumpPath,
+                BootstrapLatestDumpPaths = new List<string>(_bootstrapLatestDumpPaths)
             };
         }
     }
@@ -202,6 +272,25 @@ internal sealed class TrainingEnvironmentManager
                 lastRequestType = null,
                 lastReward = null,
                 lastError = _lastError,
+                bootstrapStage = _bootstrapStage,
+                bootstrapReady = _bootstrapReady,
+                bootstrapFailed = _bootstrapFailed,
+                bootstrapFailureReason = _bootstrapFailureReason,
+                gymLoaded = _bootstrapGymLoaded,
+                loaderRemoved = _bootstrapLoaderRemoved,
+                loaderInert = _bootstrapLoaderInert,
+                primaryActorFound = _bootstrapPrimaryActorFound,
+                arenaBuilt = _bootstrapArenaBuilt,
+                activeScene = _bootstrapActiveScene,
+                loadedScenes = new List<string>(_bootstrapLoadedScenes),
+                actorDiscoveryStatus = _actorDiscoveryStatus,
+                capabilityDiscoveryStatus = _capabilityDiscoveryStatus,
+                summonProbeStatus = _summonProbeStatus,
+                moveProbeStatus = _moveProbeStatus,
+                multiActorProbeStatus = _multiActorProbeStatus,
+                actorInteractionProbeStatus = _actorInteractionProbeStatus,
+                latestDumpPath = _bootstrapLatestDumpPath,
+                latestDumpPaths = new List<string>(_bootstrapLatestDumpPaths),
                 error = null
             };
         }
@@ -254,6 +343,7 @@ internal sealed class TrainingEnvironmentManager
             $"episodeStartUtc={(status.CurrentEpisodeStartTimeUtc.HasValue ? status.CurrentEpisodeStartTimeUtc.Value.ToString("O") : "none")} " +
             $"trainingScene={OrNone(status.CurrentTrainingSceneName)} " +
             $"playerRoot={OrNone(status.CurrentPlayerRootPath)} " +
+            $"bootstrapStage={OrNone(status.BootstrapStage)} " +
             $"lastError={OrNone(status.LastError)} " +
             $"status={OrNone(status.StatusMessage)}");
     }
@@ -299,6 +389,25 @@ internal sealed class TrainingEnvironmentStatus
     public DateTime LastUpdatedUtc { get; set; }
     public int CurrentTick { get; set; }
     public float CurrentTimeSeconds { get; set; }
+    public string BootstrapStage { get; set; }
+    public bool BootstrapReady { get; set; }
+    public bool BootstrapFailed { get; set; }
+    public string BootstrapFailureReason { get; set; }
+    public bool BootstrapGymLoaded { get; set; }
+    public bool BootstrapLoaderRemoved { get; set; }
+    public bool BootstrapLoaderInert { get; set; }
+    public bool BootstrapPrimaryActorFound { get; set; }
+    public bool BootstrapArenaBuilt { get; set; }
+    public string BootstrapActiveScene { get; set; }
+    public List<string> BootstrapLoadedScenes { get; set; }
+    public string ActorDiscoveryStatus { get; set; }
+    public string CapabilityDiscoveryStatus { get; set; }
+    public string SummonProbeStatus { get; set; }
+    public string MoveProbeStatus { get; set; }
+    public string MultiActorProbeStatus { get; set; }
+    public string ActorInteractionProbeStatus { get; set; }
+    public string BootstrapLatestDumpPath { get; set; }
+    public List<string> BootstrapLatestDumpPaths { get; set; }
 }
 
 internal sealed class TrainingBridgeStatus
@@ -320,5 +429,24 @@ internal sealed class TrainingBridgeStatus
     public string lastRequestType { get; set; }
     public float? lastReward { get; set; }
     public string lastError { get; set; }
+    public string bootstrapStage { get; set; }
+    public bool bootstrapReady { get; set; }
+    public bool bootstrapFailed { get; set; }
+    public string bootstrapFailureReason { get; set; }
+    public bool gymLoaded { get; set; }
+    public bool loaderRemoved { get; set; }
+    public bool loaderInert { get; set; }
+    public bool primaryActorFound { get; set; }
+    public bool arenaBuilt { get; set; }
+    public string activeScene { get; set; }
+    public List<string> loadedScenes { get; set; }
+    public string actorDiscoveryStatus { get; set; }
+    public string capabilityDiscoveryStatus { get; set; }
+    public string summonProbeStatus { get; set; }
+    public string moveProbeStatus { get; set; }
+    public string multiActorProbeStatus { get; set; }
+    public string actorInteractionProbeStatus { get; set; }
+    public string latestDumpPath { get; set; }
+    public List<string> latestDumpPaths { get; set; }
     public TrainingBridgeErrorInfo error { get; set; }
 }

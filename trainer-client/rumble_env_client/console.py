@@ -14,7 +14,7 @@ from .client import BridgeError
 from .config import TrainerClientConfig, create_client, load_config, save_config
 from .config import SafeHandBounds
 from .logging import RunLogger, create_run_logger
-from .summaries import config_lines, error_message, observation_lines, print_lines, status_lines, step_lines
+from .summaries import bootstrap_result_lines, config_lines, error_message, observation_lines, print_lines, status_lines, step_lines
 from .validation import run_full_validation, run_offline_validation
 
 
@@ -30,8 +30,8 @@ class OperatorConsole:
     def run(self) -> int:
         while True:
             self.print_screen()
-            choice = input("Select command: ").strip().lower()
             try:
+                choice = input("Select command: ").strip().lower()
                 if choice == "0":
                     return 0
                 if choice == "1":
@@ -58,8 +58,13 @@ class OperatorConsole:
                     self.print_latest_run_folder()
                 elif choice == "12":
                     self.print_troubleshooting()
+                elif choice == "13":
+                    self.run_bootstrap_diagnostics_menu()
                 else:
                     print("Unknown selection.")
+            except EOFError:
+                print()
+                return 0
             except KeyboardInterrupt:
                 print("\nInterrupted.")
             self.pause()
@@ -85,6 +90,7 @@ class OperatorConsole:
         print("10. Edit basic config")
         print("11. Open latest run folder path")
         print("12. Print troubleshooting help")
+        print("13. Bootstrap diagnostics")
         print("0. Exit")
         print()
 
@@ -228,6 +234,30 @@ class OperatorConsole:
         if result.stderr:
             print_tail(result.stderr)
 
+    def run_bootstrap_diagnostics_menu(self) -> None:
+        options = {
+            "1": ("get_bootstrap_report", "Get bootstrap report"),
+            "2": ("run_scene_inventory", "Run scene inventory"),
+            "3": ("run_actor_discovery", "Run actor discovery"),
+            "4": ("run_capability_discovery", "Run capability discovery"),
+            "5": ("run_single_actor_summon_probe", "Run gated summon probe"),
+            "6": ("run_move_probe", "Run gated move/modifier probe"),
+            "7": ("run_multi_actor_probe", "Run gated multi-actor feasibility probe"),
+            "8": ("run_actor_interaction_probe", "Run gated collision interaction probe"),
+            "9": ("run_arena_rebuild", "Run arena build/rebuild"),
+            "10": ("retry_bootstrap", "Reset and retry failed bootstrap"),
+        }
+        for key, (_, label) in options.items():
+            print(f"{key}. {label}")
+        selection = input("Select bootstrap action: ").strip()
+        selected = options.get(selection)
+        if selected is None:
+            print("Bootstrap action canceled.")
+            return
+
+        request_type, label = selected
+        self.with_bridge(label, lambda: self.client.bootstrap_request(request_type), self.print_bootstrap_result)
+
     def show_config(self) -> None:
         print_lines(config_lines(self.config))
 
@@ -303,6 +333,12 @@ class OperatorConsole:
             print("Observation after step:")
             print_lines(observation_lines(observation))
 
+    def print_bootstrap_result(self, response: dict[str, Any]) -> None:
+        print_lines(bootstrap_result_lines(response))
+        bootstrap_status = response.get("bootstrapStatus")
+        if isinstance(bootstrap_status, dict):
+            self.last_status = bootstrap_status
+
     def handle_exception(self, exc: Exception) -> None:
         if isinstance(exc, BridgeError):
             message = str(exc)
@@ -313,7 +349,10 @@ class OperatorConsole:
 
     @staticmethod
     def pause() -> None:
-        input("\nPress Enter to continue...")
+        try:
+            input("\nPress Enter to continue...")
+        except EOFError:
+            pass
 
     @staticmethod
     def ask_string(label: str, current: str) -> str:

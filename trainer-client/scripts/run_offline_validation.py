@@ -45,7 +45,116 @@ EXPECTED_IGNORE_ENTRIES = {
     "*.jsonl",
     "training_status_*.json",
 }
-REQUEST_TYPES = {"status", "get_observation", "reset_episode", "step", "debug_probe"}
+REQUEST_TYPES = {
+    "status",
+    "get_observation",
+    "reset_episode",
+    "step",
+    "debug_probe",
+    "get_bootstrap_report",
+    "retry_bootstrap",
+    "run_scene_inventory",
+    "run_actor_discovery",
+    "run_capability_discovery",
+    "run_single_actor_summon_probe",
+    "run_move_probe",
+    "run_multi_actor_probe",
+    "run_actor_interaction_probe",
+    "run_arena_rebuild",
+}
+BOOTSTRAP_STATUS_FIELDS = {
+    "bootstrapStage",
+    "bootstrapReady",
+    "bootstrapFailed",
+    "bootstrapFailureReason",
+    "gymLoaded",
+    "loaderRemoved",
+    "loaderInert",
+    "primaryActorFound",
+    "arenaBuilt",
+    "activeScene",
+    "loadedScenes",
+    "actorDiscoveryStatus",
+    "capabilityDiscoveryStatus",
+    "summonProbeStatus",
+    "moveProbeStatus",
+    "multiActorProbeStatus",
+    "actorInteractionProbeStatus",
+    "latestDumpPath",
+    "latestDumpPaths",
+}
+BOOTSTRAP_STAGES = {
+    "Uninitialized",
+    "InitialInventory",
+    "RequestGymLoad",
+    "WaitForGymLoaded",
+    "RemoveLoaderScene",
+    "GymInventory",
+    "DiscoverPrimaryActor",
+    "DiscoverActorCapabilities",
+    "ProbeSingleActorSummons",
+    "ProbeMoveModifiers",
+    "ProbeMultiActorSupport",
+    "ProbeActorInteraction",
+    "BuildMinimalArena",
+    "Ready",
+    "Failed",
+}
+BOOTSTRAP_DUMP_DOC_TERMS = {
+    "latest_scene_inventory.json",
+    "latest_actor_discovery.json",
+    "latest_capability_discovery.json",
+    "latest_arena_build_report.json",
+    "bootstrap_stage_*.json",
+}
+BOOTSTRAP_CONFIG_GATES = {
+    "UseStagedBootstrap",
+    "EnableLegacyBootstrapFallback",
+    "EnableFullSceneHierarchyDump",
+    "EnableExplorationProbes",
+    "EnableArenaPruning",
+    "EnableActorCloneProbes",
+    "EnableSummonProbes",
+    "EnableMoveProbes",
+    "EnableActorInteractionProbes",
+}
+BOOTSTRAP_DEFAULT_GATES = {
+    "UseStagedBootstrap": "true",
+    "EnableLegacyBootstrapFallback": "false",
+    "EnableFullSceneHierarchyDump": "false",
+    "EnableActorCloneProbes": "false",
+    "EnableSummonProbes": "false",
+    "EnableMoveProbes": "false",
+    "EnableActorInteractionProbes": "false",
+}
+ACTIVE_PROBE_CODE_TERMS = {
+    "StartSingleActorSummonProbe",
+    "StartMoveProbe",
+    "StartMultiActorProbe",
+    "StartActorInteractionProbe",
+    "StructureSpawnerTypeName",
+    "ReturnToPool",
+    "TrainingProbeCollisionRecorder",
+    "damageEvidence",
+}
+STAGED_ENGINEERING_CODE_TERMS = {
+    "ResetAndRetry",
+    "TrainingActorLocator.Resolve",
+    "bootstrap-post-arena-inventory",
+    "gym-not-confirmed-after-attempt",
+    "loader-removal-confirmed-by-inventory",
+    "loader-remained-active-after-cleanup",
+    "LoaderInert",
+    "GetArenaPreservationReason",
+    "explicit_clutter_hint",
+    "fallback_floor_created",
+    "usableFloorConfirmed",
+    "selected_collider_raycast_confirmed",
+    "supportCollider.Raycast",
+    "TryFindFloorSurfacePoint",
+    "upward_surface_hit",
+}
+KNOWLEDGE_LABELS = {"confirmed", "likely", "unconfirmed", "failed", "unsafe"}
 TRACKED_GENERATED_PREFIXES = ("trainer-client/runs/", "mod/bin/", "mod/obj/")
 TEXT_SUFFIXES = {
     ".cs",
@@ -155,6 +264,27 @@ def main() -> int:
         ) and isinstance(sample_action["durationMs"], int)
         record(results, "sample_action_schema", sample_valid, "Validated sample action against schema expectations")
 
+        response_schema = parsed_schemas.get("response-v0.3.json")
+        status_required = set()
+        status_properties = set()
+        if isinstance(response_schema, dict):
+            status_schema = response_schema.get("$defs", {}).get("statusResponse", {})
+            if isinstance(status_schema, dict):
+                status_required = set(status_schema.get("required", []))
+                status_properties = set(status_schema.get("properties", {}))
+        missing_bootstrap_schema_fields = sorted(
+            field for field in BOOTSTRAP_STATUS_FIELDS
+            if field not in status_required or field not in status_properties
+        )
+        record(
+            results,
+            "bootstrap_status_schema",
+            not missing_bootstrap_schema_fields,
+            "Status schema includes staged bootstrap fields"
+            if not missing_bootstrap_schema_fields
+            else f"Missing bootstrap status fields: {', '.join(missing_bootstrap_schema_fields)}",
+        )
+
     protocol_sources = {
         "config": {config.protocol_version},
         "mod": stale_protocol_mentions(MOD_DIR / "TrainingProtocol.cs"),
@@ -252,6 +382,128 @@ def main() -> int:
         if not missing_request_mentions
         else f"Missing: {', '.join(missing_request_mentions)}",
     )
+
+    foundation_text = (MOD_DIR / "TrainingFoundation.cs").read_text(encoding="utf-8")
+    missing_config_gates = sorted(gate for gate in BOOTSTRAP_CONFIG_GATES if gate not in foundation_text)
+    record(
+        results,
+        "bootstrap_config_gates",
+        not missing_config_gates,
+        "TrainingFoundation declares the staged bootstrap config gates"
+        if not missing_config_gates
+        else f"Missing gates: {', '.join(missing_config_gates)}",
+    )
+    unexpected_default_gates = []
+    for gate, expected_value in BOOTSTRAP_DEFAULT_GATES.items():
+        pattern = rf"{re.escape(gate)}\s*=\s*{expected_value}\s*;"
+        if not re.search(pattern, foundation_text, re.IGNORECASE):
+            unexpected_default_gates.append(f"{gate}!={expected_value}")
+    record(
+        results,
+        "bootstrap_default_gates",
+        not unexpected_default_gates,
+        "Staged bootstrap is default; full hierarchy logging and active probe gates are off by default"
+        if not unexpected_default_gates
+        else f"Unexpected defaults: {', '.join(unexpected_default_gates)}",
+    )
+
+    active_probe_path = MOD_DIR / "TrainingExplorationProbeService.cs"
+    active_probe_text = active_probe_path.read_text(encoding="utf-8") if active_probe_path.exists() else ""
+    runtime_tools_text = (MOD_DIR / "TrainingRuntimeTools.cs").read_text(encoding="utf-8")
+    combined_probe_text = active_probe_text + "\n" + runtime_tools_text
+    missing_active_probe_terms = sorted(
+        term for term in ACTIVE_PROBE_CODE_TERMS if term not in combined_probe_text
+    )
+    stale_placeholder = "not_implemented" in foundation_text or "not_implemented" in active_probe_text
+    record(
+        results,
+        "active_probe_implementation",
+        active_probe_path.exists() and not missing_active_probe_terms and not stale_placeholder,
+        "Bounded active probes include evidence, cleanup, and collision-only damage semantics"
+        if active_probe_path.exists() and not missing_active_probe_terms and not stale_placeholder
+        else (
+            f"Missing terms: {', '.join(missing_active_probe_terms)}; "
+            f"stale placeholder={stale_placeholder}"
+        ),
+    )
+
+    orchestrator_text = (MOD_DIR / "TrainingBootstrapOrchestrator.cs").read_text(encoding="utf-8")
+    staged_engineering_text = foundation_text + "\n" + orchestrator_text
+    missing_staged_engineering_terms = sorted(
+        term for term in STAGED_ENGINEERING_CODE_TERMS if term not in staged_engineering_text
+    )
+    blanket_prune_pattern = re.search(
+        r"if\s*\(\s*EnableArenaPruning\s*\)\s*\{\s*UnityObject\.Destroy\(root\)",
+        foundation_text,
+        re.MULTILINE,
+    )
+    record(
+        results,
+        "staged_closed_loop_guards",
+        not missing_staged_engineering_terms and blanket_prune_pattern is None,
+        "Gym retries, Loader confirmation, retry control, and classified arena pruning are present"
+        if not missing_staged_engineering_terms and blanket_prune_pattern is None
+        else (
+            f"Missing terms: {', '.join(missing_staged_engineering_terms)}; "
+            f"blanket pruning={blanket_prune_pattern is not None}"
+        ),
+    )
+
+    bootstrap_notes = REPO_DIR / "docs" / "ai-bootstrap-rework-notes.md"
+    if bootstrap_notes.exists():
+        bootstrap_text = bootstrap_notes.read_text(encoding="utf-8")
+        missing_bootstrap_stages = sorted(stage for stage in BOOTSTRAP_STAGES if stage not in bootstrap_text)
+        missing_bootstrap_dump_terms = sorted(term for term in BOOTSTRAP_DUMP_DOC_TERMS if term not in bootstrap_text)
+        missing_bootstrap_config_terms = sorted(gate for gate in BOOTSTRAP_CONFIG_GATES if gate not in bootstrap_text)
+        missing_bootstrap_docs = sorted(field for field in BOOTSTRAP_STATUS_FIELDS if field not in protocol_text)
+        record(
+            results,
+            "bootstrap_rework_notes",
+            not missing_bootstrap_stages and not missing_bootstrap_dump_terms and not missing_bootstrap_config_terms,
+            "Bootstrap rework notes document all staged states, key dump files, and config gates"
+            if not missing_bootstrap_stages and not missing_bootstrap_dump_terms and not missing_bootstrap_config_terms
+            else (
+                f"Missing stages: {', '.join(missing_bootstrap_stages)}; "
+                f"missing dumps: {', '.join(missing_bootstrap_dump_terms)}; "
+                f"missing config gates: {', '.join(missing_bootstrap_config_terms)}"
+            ),
+        )
+        record(
+            results,
+            "bootstrap_protocol_docs",
+            not missing_bootstrap_docs,
+            "Protocol docs mention staged bootstrap status fields"
+            if not missing_bootstrap_docs
+            else f"Missing fields: {', '.join(missing_bootstrap_docs)}",
+        )
+    else:
+        record(results, "bootstrap_rework_notes", False, "docs/ai-bootstrap-rework-notes.md is missing")
+        record(results, "bootstrap_protocol_docs", False, "Cannot verify bootstrap protocol docs without notes file")
+
+    bootstrap_knowledge = REPO_DIR / "docs" / "ai-bootstrap-knowledge.md"
+    if bootstrap_knowledge.exists():
+        knowledge_text = bootstrap_knowledge.read_text(encoding="utf-8")
+        missing_labels = sorted(label for label in KNOWLEDGE_LABELS if f"`{label}`" not in knowledge_text)
+        missing_knowledge_terms = sorted(
+            term for term in [
+                "latest_scene_inventory.json",
+                "latest_actor_discovery.json",
+                "latest_capability_discovery.json",
+                "latest_arena_build_report.json",
+                "run_full_validation.py",
+            ]
+            if term not in knowledge_text
+        )
+        record(
+            results,
+            "bootstrap_knowledge_doc",
+            not missing_labels and not missing_knowledge_terms,
+            "Bootstrap knowledge doc exists with claim labels and key artifacts"
+            if not missing_labels and not missing_knowledge_terms
+            else f"Missing labels: {', '.join(missing_labels)}; missing terms: {', '.join(missing_knowledge_terms)}",
+        )
+    else:
+        record(results, "bootstrap_knowledge_doc", False, "docs/ai-bootstrap-knowledge.md is missing")
 
     tracked = tracked_files()
     tracked_generated = [
