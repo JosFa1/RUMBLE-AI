@@ -105,7 +105,7 @@ Current implementation state:
 - `TrainingEnvironmentManager.GetBridgeStatus()` now exposes `bootstrapStage`, `bootstrapReady`, `bootstrapFailed`, `bootstrapFailureReason`, `activeScene`, `loadedScenes`, `gymLoaded`, `loaderRemoved`, `primaryActorFound`, `arenaBuilt`, passive discovery status, probe status defaults, `latestDumpPath`, and `latestDumpPaths`.
 - `TrainingBridgeServer` now starts before the training scene is ready so `status` can report staged bootstrap progress while observation, reset, step, and legacy debug probe requests remain scene-ready gated.
 - The bridge exposes operator-triggered bootstrap diagnostics: `get_bootstrap_report`, `run_scene_inventory`, `run_actor_discovery`, `run_capability_discovery`, `run_single_actor_summon_probe`, `run_move_probe`, `run_multi_actor_probe`, `run_actor_interaction_probe`, and `run_arena_rebuild`.
-- Bootstrap mode is controlled by `UseStagedBootstrap`, `EnableLegacyBootstrapFallback`, `EnableFullSceneHierarchyDump`, `EnableExplorationProbes`, `EnableArenaPruning`, `EnableActorCloneProbes`, `EnableSummonProbes`, `EnableMoveProbes`, and `EnableActorInteractionProbes`.
+- Bootstrap mode is controlled by `UseStagedBootstrap`, `EnableLegacyBootstrapFallback`, `EnableFullSceneHierarchyDump`, `EnableExplorationProbes`, `EnableArenaPruning`, `NoPruneActorValidationMode`, `EnableActorCloneProbes`, `EnableSummonProbes`, `EnableMoveProbes`, and `EnableActorInteractionProbes`.
 - Full hierarchy logging is disabled by default for normal startup. Passive JSON scene inventory remains enabled and can still be requested through the bridge or `F7`.
 - Active probe diagnostic requests are config-gated. With default probe gates off, summon, move, multi-actor, and interaction requests write explicit `disabled_by_config` reports and do not invoke gameplay methods.
 - The summon probe allows one exact active `Il2CppRUMBLE.MoveSystem.StructureSpawner.Spawn()` candidate with a non-null configured structure. It snapshots loaded-scene objects before and after, requires an observed new or pool-activated structure-like object, distinguishes actor-bound confirmation from scene-spawner partial evidence, and attempts `ReturnToPool()` cleanup.
@@ -177,6 +177,16 @@ Stages 8-11:
 - Why injected `OnCollisionEnter` and `OnTriggerEnter` callbacks remained silent while paired collider bounds overlapped.
 - Direct grounded state, damage, health-change, hit-event, ownership-transfer, and real combat evidence.
 
+## Actor Completeness Status
+
+The current target state is Outcome B unless new live evidence proves otherwise: `BootLoaderPlayer` is the selected actor and is treated as a partial tracking rig. It has head and hand transforms and the bridge can move those hands, but the actor completeness reports must not imply a complete local character when renderer count is zero, visible model evidence is absent, root motion is unconfirmed, and actor-bound movement, physics/grounding, health, ownership, summon context, and real summon are missing.
+
+`Ready` in the operator means Bootstrap Ready, not playable actor ready. The operator/status view should show Actor Complete as false through `actorCompletenessClassification=partial_tracking_rig`, `onlyGhostHandsDetected=true`, `hasVisibleModel=false`, `hasMovementSystem=false`, `hasPhysicsOrGrounding=false`, `hasHealth=false`, `hasOwnership=false`, `hasSummonContext=false`, `realSummonConfirmed=false`, and `rootMotionConfirmed=false`.
+
+The real summon probe report is required even when no invocation is safe. A blocked report is valid when it records the missing owner/init/spawner context, `generatedObjectCount=0`, and `realSummonConfirmed=false`.
+
+Next exact goal after this work: discover and trigger the complete local-player lifecycle after Gym load, without breaking the now-green staged bootstrap, then re-run actor completeness and summon context discovery.
+
 ## First Manual Test Commands
 
 Build:
@@ -217,6 +227,11 @@ Files to inspect after live startup:
 - `UserData/AI_Train/Dumps/latest_capability_discovery.json`
 - `UserData/AI_Train/Dumps/capability_discovery_*.json`
 - `UserData/AI_Train/Dumps/latest_single_actor_summon_probe.json`
+- `UserData/AI_Train/Dumps/latest_actor_completeness.json`
+- `UserData/AI_Train/Dumps/latest_local_player_lifecycle_discovery.json`
+- `UserData/AI_Train/Dumps/latest_summon_context_discovery.json`
+- `UserData/AI_Train/Dumps/latest_real_summon_probe.json`
+- `UserData/AI_Train/Dumps/latest_actor_pruning_comparison.json`
 - `UserData/AI_Train/Dumps/single_actor_summon_probe_*.json`
 - `UserData/AI_Train/Dumps/latest_move_probe.json`
 - `UserData/AI_Train/Dumps/move_probe_*.json`

@@ -17,12 +17,14 @@ namespace AI_Train;
 internal sealed class TrainingFoundation : IDisposable
 {
     private const string TrainingSceneName = "AI_Train_Training";
+    private const string ActorMode = "BootstrapRig";
     private const float AutoScanIntervalSeconds = 2.5f;
     private static readonly bool UseStagedBootstrap = true;
     private static readonly bool EnableLegacyBootstrapFallback = false;
     private static readonly bool EnableFullSceneHierarchyDump = false;
     private static readonly bool EnableExplorationProbes = true;
     private static readonly bool EnableArenaPruning = true;
+    private static readonly bool NoPruneActorValidationMode = false;
     private static readonly bool EnableActorCloneProbes = false;
     private static readonly bool EnableSummonProbes = false;
     private static readonly bool EnableMoveProbes = false;
@@ -106,6 +108,7 @@ internal sealed class TrainingFoundation : IDisposable
     private TrainingMonitorCamera _monitorCamera;
     private TrainingExplorationService _explorationService;
     private TrainingExplorationProbeService _activeProbeService;
+    private ActorCompletenessService _actorCompletenessService;
     private TrainingBridgeServer _bridgeServer;
     private TrainingBootstrapOrchestrator _bootstrapOrchestrator;
     private string _logRoot;
@@ -123,6 +126,8 @@ internal sealed class TrainingFoundation : IDisposable
     private SceneCandidate _bestPlayerCandidate;
     private GameObject _preservedActorCandidate;
     private List<Type> _capabilityRuntimeTypes;
+    private ActorCompletenessReport _preArenaActorCompleteness;
+    private LocalPlayerLifecycleDiscoveryReport _preArenaLifecycleDiscovery;
 
     public void Initialize()
     {
@@ -151,6 +156,9 @@ internal sealed class TrainingFoundation : IDisposable
             RunSceneInventory = RunSceneInventoryBridgeRequest,
             RunActorDiscovery = RunActorDiscoveryBridgeRequest,
             RunCapabilityDiscovery = RunCapabilityDiscoveryBridgeRequest,
+            RunActorCompleteness = RunActorCompletenessBridgeRequest,
+            RunLocalPlayerLifecycleDiscovery = RunLocalPlayerLifecycleDiscoveryBridgeRequest,
+            RunSummonContextDiscovery = RunSummonContextDiscoveryBridgeRequest,
             RunSingleActorSummonProbe = RunSingleActorSummonProbeBridgeRequest,
             RunMoveProbe = RunMoveProbeBridgeRequest,
             RunMultiActorProbe = RunMultiActorProbeBridgeRequest,
@@ -175,9 +183,14 @@ internal sealed class TrainingFoundation : IDisposable
             LogInfo,
             LogWarn,
             LogError);
+        _actorCompletenessService = new ActorCompletenessService(
+            ResolvePrimaryActor,
+            WriteJson,
+            LogInfo,
+            LogWarn);
 
         LogInfo("AI_Train bootstrap initialized.");
-        LogInfo($"Bootstrap mode: {(UseStagedBootstrap ? "staged" : "legacy")} legacyFallback={EnableLegacyBootstrapFallback}.");
+        LogInfo($"Bootstrap mode: {(UseStagedBootstrap ? "staged" : "legacy")} actorMode={ActorMode} legacyFallback={EnableLegacyBootstrapFallback}.");
         LogInfo($"Log file: {_logFilePath}");
         LogInfo("Hotkeys: F6 = toggle monitor camera free-fly, F7 = dump active scenes, F8 = force training scene build, F9 = rescan all, F10 = force gym load, F11 = dump observation, F12 = run debug probe.");
 
@@ -520,6 +533,11 @@ internal sealed class TrainingFoundation : IDisposable
         LogInfo(
             $"Actor discovery report written ({reason}). actor={(actorRoot != null ? GetPath(actorRoot.transform) : "none")} " +
             $"validated={actorValid} strong={_bestPlayerCandidate?.IsStrongActor == true} missing={string.Join(",", missing)}.");
+        if (actorValid)
+        {
+            var completeness = RunActorCompletenessInternal($"{reason}-before-arena");
+            _preArenaActorCompleteness = completeness?.report as ActorCompletenessReport;
+        }
 
         return new TrainingBootstrapDiscoveryResult
         {
@@ -588,6 +606,8 @@ internal sealed class TrainingFoundation : IDisposable
         var path = WriteJson($"capability_discovery_{timestampUtc:yyyyMMdd_HHmmss}.json", report);
         WriteJson("latest_capability_discovery.json", report);
         LogInfo($"Capability discovery report written ({reason}). candidates={allCandidates.Count} actor={(actorRoot != null ? GetPath(actorRoot.transform) : "none")}.");
+        var lifecycle = _actorCompletenessService?.RunLifecycleDiscovery($"{reason}-before-arena", ActorMode);
+        _preArenaLifecycleDiscovery = lifecycle?.report as LocalPlayerLifecycleDiscoveryReport;
 
         return new TrainingBootstrapDiscoveryResult
         {
@@ -746,6 +766,67 @@ internal sealed class TrainingFoundation : IDisposable
             Message = result?.Succeeded == true
                 ? $"Capability discovery written for {result.PrimaryActorPath}."
                 : result?.FailureReason ?? "Capability discovery failed."
+        };
+    }
+
+    private TrainingBridgeBootstrapActionResult RunActorCompletenessBridgeRequest(string reason)
+    {
+        return ToBridgeResult(
+            RunActorCompletenessInternal(reason),
+            "Actor completeness report written.",
+            "actor_completeness_failed");
+    }
+
+    private TrainingBridgeBootstrapActionResult RunLocalPlayerLifecycleDiscoveryBridgeRequest(string reason)
+    {
+        var result = _actorCompletenessService?.RunLifecycleDiscovery(reason, ActorMode);
+        if (result?.report is LocalPlayerLifecycleDiscoveryReport report)
+        {
+            _trainingEnvironmentManager?.UpdateLifecycleDiscovery(
+                report.bestCandidatePath,
+                report.bestCandidateScene,
+                result.reportPath);
+        }
+        return ToBridgeResult(result, "Local-player lifecycle discovery written.", "lifecycle_discovery_failed");
+    }
+
+    private TrainingBridgeBootstrapActionResult RunSummonContextDiscoveryBridgeRequest(string reason)
+    {
+        var result = _actorCompletenessService?.RunSummonContextDiscovery(reason, ActorMode);
+        if (result?.report is SummonContextDiscoveryReport report)
+        {
+            _trainingEnvironmentManager?.UpdateSummonContext(
+                report.actorBoundSummonContextFound,
+                result.reportPath);
+            _trainingEnvironmentManager?.UpdateRealSummonProbe(
+                false,
+                report.realSummonProbeReportPath);
+        }
+        return ToBridgeResult(result, "Summon context discovery written.", "summon_context_discovery_failed");
+    }
+
+    private ActorCompletenessRunResult RunActorCompletenessInternal(string reason)
+    {
+        var result = _actorCompletenessService?.RunActorCompleteness(reason, ActorMode);
+        if (result?.report is ActorCompletenessReport report)
+        {
+            _trainingEnvironmentManager?.UpdateActorCompleteness(report, result.reportPath);
+        }
+        return result;
+    }
+
+    private static TrainingBridgeBootstrapActionResult ToBridgeResult(
+        ActorCompletenessRunResult result,
+        string message,
+        string errorCode)
+    {
+        return new TrainingBridgeBootstrapActionResult
+        {
+            Succeeded = result?.report != null,
+            Status = result?.report != null ? "complete" : "failed",
+            ReportPath = result?.reportPath,
+            ErrorCode = result?.report != null ? null : errorCode,
+            Message = result?.report != null ? message : "Report generation failed."
         };
     }
 
@@ -1184,6 +1265,7 @@ internal sealed class TrainingFoundation : IDisposable
                 EnableFullSceneHierarchyDump,
                 EnableExplorationProbes,
                 EnableArenaPruning,
+                NoPruneActorValidationMode,
                 EnableActorCloneProbes,
                 EnableSummonProbes,
                 EnableMoveProbes,
@@ -3354,7 +3436,7 @@ internal sealed class TrainingFoundation : IDisposable
                 continue;
             }
 
-            if (EnableArenaPruning && IsExplicitArenaClutter(report))
+            if (EnableArenaPruning && !NoPruneActorValidationMode && IsExplicitArenaClutter(report))
             {
                 UnityObject.Destroy(root);
                 _destroyedRoots.Add(report.Path);
@@ -3375,7 +3457,11 @@ internal sealed class TrainingFoundation : IDisposable
             {
                 path = report.Path,
                 action = "preserve",
-                reason = EnableArenaPruning ? "no_explicit_prune_evidence" : "arena_pruning_disabled",
+                reason = EnableArenaPruning && !NoPruneActorValidationMode
+                    ? "no_explicit_prune_evidence"
+                    : NoPruneActorValidationMode
+                        ? "no_prune_actor_validation_mode"
+                        : "arena_pruning_disabled",
                 classification = report.ClassificationName
             });
         }
@@ -3419,6 +3505,26 @@ internal sealed class TrainingFoundation : IDisposable
         LogInfo($"Training scene ready. Moved={movedRoots.Count}, pruned={prunedRoots.Count}, retainedUnknown={retainedUnknownRoots.Count}.");
 
         var managerInitialized = _trainingEnvironmentManager.InitializeFromDiscoveredScene(trainingScene, trainingActor, sourceScene.name, _bestPlayerCandidate.Path);
+        if (managerInitialized)
+        {
+            var afterCompleteness = RunActorCompletenessInternal($"{reason}-after-arena");
+            var afterLifecycle = _actorCompletenessService?.RunLifecycleDiscovery($"{reason}-after-arena", ActorMode);
+            if (afterLifecycle?.report is LocalPlayerLifecycleDiscoveryReport lifecycleReport)
+            {
+                _trainingEnvironmentManager?.UpdateLifecycleDiscovery(
+                    lifecycleReport.bestCandidatePath,
+                    lifecycleReport.bestCandidateScene,
+                    afterLifecycle.reportPath);
+            }
+            var pruningReportPath = WriteActorPruningComparison(
+                reason,
+                _preArenaActorCompleteness,
+                afterCompleteness?.report as ActorCompletenessReport,
+                _preArenaLifecycleDiscovery,
+                afterLifecycle?.report as LocalPlayerLifecycleDiscoveryReport);
+            _trainingEnvironmentManager?.UpdatePruningComparison(pruningReportPath);
+            RunSummonContextDiscoveryBridgeRequest($"{reason}-after-arena");
+        }
         PublishObservation("training-ready");
         WriteJson($"training_status_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json", _trainingEnvironmentManager.GetStatus());
         WriteArenaBuildReport(
@@ -4319,6 +4425,94 @@ internal sealed class TrainingFoundation : IDisposable
         _bootstrapOrchestrator?.RecordArenaBuild(path, managerInitialized);
         _trainingEnvironmentManager?.UpdateBootstrapState(_bootstrapOrchestrator?.State);
         LogInfo($"Arena build report written ({reason}). managerInitialized={managerInitialized} path={path ?? "none"}.");
+        return path;
+    }
+
+    private string WriteActorPruningComparison(
+        string reason,
+        ActorCompletenessReport before,
+        ActorCompletenessReport after,
+        LocalPlayerLifecycleDiscoveryReport lifecycleBefore,
+        LocalPlayerLifecycleDiscoveryReport lifecycleAfter)
+    {
+        var beforeComponents = before?.componentTypes ?? new List<string>();
+        var afterComponents = after?.componentTypes ?? new List<string>();
+        var lostActorComponents = beforeComponents
+            .Except(afterComponents, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var gainedActorComponents = afterComponents
+            .Except(beforeComponents, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var beforeCandidates = lifecycleBefore?.candidates?.Select(candidate => candidate.rootPath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? new List<string>();
+        var afterCandidates = lifecycleAfter?.candidates?.Select(candidate => candidate.rootPath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? new List<string>();
+        var lostLifecycleCandidates = beforeCandidates
+            .Except(afterCandidates, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var actorSubtreePreserved = before != null &&
+                                    after != null &&
+                                    lostActorComponents.Count == 0 &&
+                                    before.rendererCount == after.rendererCount &&
+                                    before.rigidbodyCount == after.rigidbodyCount &&
+                                    before.colliderCount == after.colliderCount &&
+                                    string.Equals(before.classification, after.classification, StringComparison.OrdinalIgnoreCase);
+        var report = new
+        {
+            timestampUtc = DateTime.UtcNow,
+            reason,
+            actorMode = ActorMode,
+            arenaPruningEnabled = EnableArenaPruning,
+            noPruneActorValidationMode = NoPruneActorValidationMode,
+            comparisonMode = "same_run_before_and_after_arena_move_and_prune",
+            before = before == null ? null : new
+            {
+                before.actorRootPath,
+                before.actorScene,
+                before.classification,
+                before.completenessScore,
+                before.rendererCount,
+                before.rigidbodyCount,
+                before.characterControllerCount,
+                before.colliderCount,
+                componentTypes = beforeComponents
+            },
+            after = after == null ? null : new
+            {
+                after.actorRootPath,
+                after.actorScene,
+                after.classification,
+                after.completenessScore,
+                after.rendererCount,
+                after.rigidbodyCount,
+                after.characterControllerCount,
+                after.colliderCount,
+                componentTypes = afterComponents
+            },
+            lostActorComponents,
+            gainedActorComponents,
+            lifecycleCandidatePathsBefore = beforeCandidates,
+            lifecycleCandidatePathsAfter = afterCandidates,
+            lostLifecycleCandidates,
+            actorSubtreePreserved,
+            modStrippedRequiredActorSystems = actorSubtreePreserved ? false : (bool?)null,
+            conclusion = actorSubtreePreserved
+                ? "The selected actor had the same incomplete component inventory before and after arena movement/pruning; this run did not strip systems from the actor subtree."
+                : "The selected actor inventory changed; inspect the listed component and lifecycle differences before claiming pruning is safe.",
+            remainingUncertainty = "This comparison does not prove that moving the actor preserved every external object reference."
+        };
+        var path = WriteJson($"actor_pruning_comparison_{DateTime.UtcNow:yyyyMMdd_HHmmss_fff}.json", report);
+        WriteJson("latest_actor_pruning_comparison.json", report);
+        LogInfo(
+            $"Actor pruning comparison written. preserved={actorSubtreePreserved} " +
+            $"lostComponents={lostActorComponents.Count} lostLifecycleCandidates={lostLifecycleCandidates.Count}.");
         return path;
     }
 

@@ -175,3 +175,23 @@ This document is for AI continuation. Every claim is labeled `confirmed`, `likel
 `unconfirmed`: A game-specific grounded-state flag, health change, damage, hit event, ownership transfer, and real combat evidence.
 
 `confirmed`: The next recommended goal is to discover or transition to a complete local-player actor state while preserving this now-green staged bootstrap, then rerun only summon and movement discovery before attempting any additional active method.
+
+## Actor Completeness Status
+
+`confirmed`: Bootstrap readiness and actor completeness are separate states. `bootstrapReady=true` means the staged bridge scene is usable; it does not mean the selected actor is a complete playable RUMBLE character.
+
+`confirmed`: The selected actor remains `BootLoaderPlayer`. It has head and distinct left/right hand transforms, and live step actions can move the hand transforms through `ActionExecutor`.
+
+`confirmed`: The current actor-completeness report classifies `BootLoaderPlayer` as `partial_tracking_rig` unless newer live evidence proves a better candidate. The expected report fields are `onlyGhostHandsDetected=true`, `hasVisibleModel=false`, `rendererCount=0`, `hasBody=false`, `hasMovementSystem=false`, `hasPhysicsOrGrounding=false`, `hasHealth=false`, `hasOwnership=false`, `hasSummonContext=false`, `realSummonConfirmed=false`, and `rootMotionConfirmed=false`.
+
+`failed`: No actor-bound visible model, movement/root-motion system, actor-side physics/grounding, health, ownership, or configured summon context has been found under the selected hierarchy.
+
+`failed`: Real summon is not confirmed. `latest_real_summon_probe.json` must still exist; when summon is blocked it reports `status=blocked`, `generatedObjectCount=0`, and `realSummonConfirmed=false` with the missing ownership/init context.
+
+`confirmed`: Actor pruning comparison is required before blaming the training scene. If the selected actor inventory is unchanged before and after Loader removal and arena build, the report should say useful systems were never present rather than stripped by pruning.
+
+`unconfirmed`: A complete local-player lifecycle state after Gym load may exist elsewhere or require an additional game transition.
+
+`confirmed`: The current Ready state is enough for bridge/environment validation, observation, reset, and hand-target stepping. It is not enough for AI training that needs a complete local actor, game movement, health, ownership, combat, or real summon mechanics.
+
+`confirmed`: Next exact goal: discover and trigger the complete local-player lifecycle after Gym load, without breaking the now-green staged bootstrap, then re-run actor completeness and summon context discovery.

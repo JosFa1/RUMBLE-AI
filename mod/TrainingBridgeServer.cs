@@ -1093,6 +1093,21 @@ internal sealed class TrainingBridgeServer : IDisposable
             return InvokeBootstrapAction(requestType, _bootstrapActions.RunCapabilityDiscovery);
         }
 
+        if (string.Equals(requestType, "run_actor_completeness", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunActorCompleteness);
+        }
+
+        if (string.Equals(requestType, "run_local_player_lifecycle_discovery", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunLocalPlayerLifecycleDiscovery);
+        }
+
+        if (string.Equals(requestType, "run_summon_context_discovery", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunSummonContextDiscovery);
+        }
+
         if (string.Equals(requestType, "run_single_actor_summon_probe", StringComparison.OrdinalIgnoreCase))
         {
             return InvokeBootstrapAction(requestType, _bootstrapActions.RunSingleActorSummonProbe);
@@ -1388,6 +1403,9 @@ internal sealed class TrainingBridgeServer : IDisposable
                string.Equals(requestType, "run_scene_inventory", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(requestType, "run_actor_discovery", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(requestType, "run_capability_discovery", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_actor_completeness", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_local_player_lifecycle_discovery", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_summon_context_discovery", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(requestType, "run_single_actor_summon_probe", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(requestType, "run_move_probe", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(requestType, "run_multi_actor_probe", StringComparison.OrdinalIgnoreCase) ||

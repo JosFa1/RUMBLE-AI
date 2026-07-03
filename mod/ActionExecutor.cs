@@ -113,6 +113,7 @@ internal sealed class ActionExecutor
         rightTargetLocal = TrainingActorLocator.ClampLocalTarget(rightTargetLocal, out rightClamped);
 
         var playerTransform = playerRoot.transform;
+        var rootPositionBefore = playerTransform.position;
         var leftTargetWorld = TrainingActorLocator.ToWorldTarget(playerTransform, leftTargetLocal);
         var rightTargetWorld = TrainingActorLocator.ToWorldTarget(playerTransform, rightTargetLocal);
         var leftHand = TrainingActorLocator.Resolve(playerTransform, TrainingActorLocator.LeftHandCandidates);
@@ -215,6 +216,8 @@ internal sealed class ActionExecutor
             DurationMs = durationMs,
             LeftHand = leftHand,
             RightHand = rightHand,
+            RootTransform = playerTransform,
+            RootPositionBefore = rootPositionBefore,
             LeftTargetWorld = leftTargetWorld,
             RightTargetWorld = rightTargetWorld,
             LeftDistanceBefore = leftDistanceBefore,
@@ -467,6 +470,9 @@ internal sealed class ActionExecutor
         info.actionApplied = step.LeftMoved || step.RightMoved;
         info.rewardBreakdown = rewardBreakdown;
         info.reward = rewardBreakdown.totalReward;
+        var rootMoved = step.RootTransform != null &&
+                        (step.RootTransform.position - step.RootPositionBefore).sqrMagnitude > MoveEpsilon * MoveEpsilon;
+        _manager?.UpdateMotionEvidence(rootMoved, step.LeftMoved || step.RightMoved);
 
         lock (_gate)
         {
@@ -568,6 +574,8 @@ internal sealed class ActionExecutor
         public int DurationMs { get; set; }
         public TrainingActorLocator.ResolvedTransform LeftHand { get; set; }
         public TrainingActorLocator.ResolvedTransform RightHand { get; set; }
+        public Transform RootTransform { get; set; }
+        public Vector3 RootPositionBefore { get; set; }
         public Vector3 LeftTargetWorld { get; set; }
         public Vector3 RightTargetWorld { get; set; }
         public float LeftDistanceBefore { get; set; }

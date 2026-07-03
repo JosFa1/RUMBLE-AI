@@ -43,6 +43,7 @@ internal sealed class TrainingBootstrapState
     public string multiActorProbeStatus { get; set; } = "not_run";
     public string actorInteractionProbeStatus { get; set; } = "not_run";
     public string mode { get; set; }
+    public string actorMode { get; set; }
     public string lastAction { get; set; }
     public string lastReportPath { get; set; }
     public List<string> latestDumpPaths { get; set; } = new();
@@ -89,6 +90,7 @@ internal sealed class TrainingBootstrapOrchestrator
         _writeReport = writeReport ?? ((_, _) => { });
         _state.stage = _stage.ToString();
         _state.mode = "staged";
+        _state.actorMode = "BootstrapRig";
     }
 
     public TrainingBootstrapState State => _state;

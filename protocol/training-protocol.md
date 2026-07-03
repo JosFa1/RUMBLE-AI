@@ -51,6 +51,9 @@ Implemented requests:
 - `run_scene_inventory`
 - `run_actor_discovery`
 - `run_capability_discovery`
+- `run_actor_completeness`
+- `run_local_player_lifecycle_discovery`
+- `run_summon_context_discovery`
 - `run_single_actor_summon_probe`
 - `run_move_probe`
 - `run_multi_actor_probe`
@@ -121,6 +124,12 @@ Successful response:
 `debug_probe` is local-only and is intended for discovery work on the training scene. It returns a structured report of likely summon, kick, camera, and test-loop entry points, plus any coroutine-backed test sequence that was started.
 
 Bootstrap diagnostic requests are local-only operator controls. `get_bootstrap_report` returns the cached staged bootstrap state. `retry_bootstrap` clears a non-ready staged failure and restarts at `InitialInventory`; it is a no-op with `already_ready` when the environment is already usable. `run_scene_inventory`, `run_actor_discovery`, and `run_capability_discovery` enqueue passive Unity-main-thread report generation and write the corresponding dump files. The summon, move, multi-actor, and interaction requests are config-gated and return `disabled_by_config` without side effects by default. When enabled, a request may return `running`; poll `status` until the corresponding probe status changes, then inspect the reported timestamped file and its `latest_*.json` alias. Summon success requires observed structure-like object evidence, move success requires measured actor displacement, and multi-actor feasibility currently confirms only a dummy target. Interaction distinguishes direct Unity collision/trigger callbacks from weaker paired collider-bounds overlap; none of these contact levels confirms damage or game combat. `run_arena_rebuild` is a manual arena build/rebuild request and should be used only during validation.
+
+`run_actor_completeness` passively inventories renderers, head/hands/body-root evidence, rigidbodies, character controllers, colliders, floor support, and categorized gameplay-system candidates. `run_local_player_lifecycle_discovery` searches all loaded scenes and `DontDestroyOnLoad` roots for a better local-player lifecycle candidate. `run_summon_context_discovery` searches loaded components outside the selected actor for actor-bound, manager, pool, gesture, stack, and unsafe network summon paths. These three requests do not invoke gameplay, ownership, damage, or network methods.
+
+`bootstrapReady` and `sceneReady` mean that the staged scene and bridge workflow are usable. They do not mean the selected actor is a complete RUMBLE character. Actor usability is reported separately through `actorMode`, `actorCompletenessClassification`, `hasVisibleModel`, `rendererCount`, `hasBody`, `hasHead`, `hasHands`, `hasMovementSystem`, `hasPhysicsOrGrounding`, `hasHealth`, `hasOwnership`, `hasSummonContext`, `realSummonConfirmed`, `rootMotionConfirmed`, `handMotionConfirmed`, `onlyGhostHandsDetected`, `currentBestActorPath`, `currentBestActorScene`, `latestActorCompletenessReport`, `latestLocalPlayerLifecycleDiscoveryReport`, `latestSummonContextReport`, `latestRealSummonProbeReport`, and `latestPruningComparisonReport`.
+
+The current expected incomplete state is `actorCompletenessClassification=partial_tracking_rig`: BootLoaderPlayer has head and hand transforms and ActionExecutor can move the hands, but no visible model, actor-bound movement system, actor-side physics/grounding, health, ownership, actor-bound summon context, root motion, or real summon has been confirmed. A blocked `latest_real_summon_probe.json` is valid when it explains the missing ownership/init context and reports `realSummonConfirmed=false`.
 
 ## Response shape
 

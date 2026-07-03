@@ -24,6 +24,9 @@ internal sealed class TrainingBridgeBootstrapActions
     public System.Func<string, TrainingBridgeBootstrapActionResult> RunSceneInventory { get; set; }
     public System.Func<string, TrainingBridgeBootstrapActionResult> RunActorDiscovery { get; set; }
     public System.Func<string, TrainingBridgeBootstrapActionResult> RunCapabilityDiscovery { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunActorCompleteness { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunLocalPlayerLifecycleDiscovery { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunSummonContextDiscovery { get; set; }
     public System.Func<string, TrainingBridgeBootstrapActionResult> RunSingleActorSummonProbe { get; set; }
     public System.Func<string, TrainingBridgeBootstrapActionResult> RunMoveProbe { get; set; }
     public System.Func<string, TrainingBridgeBootstrapActionResult> RunMultiActorProbe { get; set; }

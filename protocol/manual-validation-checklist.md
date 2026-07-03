@@ -93,7 +93,9 @@ python scripts/run_full_validation.py
 
 Expected pass signs: final line is `PASS`, a run folder is created, and `validation_report.json` is saved.
 
-Failure signs: connection failure, `bootstrapFailed=true`, `bootstrapReady=false`, `sceneReady=false`, malformed request checks fail, safe step reward is not finite, clamped step lacks clamp info, or stability run fails.
+Expected actor-completeness signs for the current partial state: `latest_actor_completeness.json`, `latest_local_player_lifecycle_discovery.json`, `latest_summon_context_discovery.json`, `latest_real_summon_probe.json`, and `latest_actor_pruning_comparison.json` exist and parse. `partial_tracking_rig`, `onlyGhostHandsDetected=true`, and `realSummonConfirmed=false` are acceptable warnings, not bridge failures.
+
+Failure signs: connection failure, `bootstrapFailed=true`, `bootstrapReady=false`, `sceneReady=false`, required actor-completeness reports missing, malformed request checks fail, safe step reward is not finite, clamped step lacks clamp info, or stability run fails.
 
 ## 9. Run Scripted Sequence
 

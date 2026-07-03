@@ -32,6 +32,7 @@ EXIT_RESET_FAILURE = 16
 EXIT_STABILITY_FAILURE = 17
 BOOTSTRAP_STATUS_FIELDS = {
     "bootstrapStage",
+    "actorMode",
     "bootstrapReady",
     "bootstrapFailed",
     "bootstrapFailureReason",
@@ -48,6 +49,28 @@ BOOTSTRAP_STATUS_FIELDS = {
     "moveProbeStatus",
     "multiActorProbeStatus",
     "actorInteractionProbeStatus",
+    "actorCompletenessClassification",
+    "hasVisibleModel",
+    "rendererCount",
+    "hasBody",
+    "hasHead",
+    "hasHands",
+    "hasMovementSystem",
+    "hasPhysicsOrGrounding",
+    "hasHealth",
+    "hasOwnership",
+    "hasSummonContext",
+    "realSummonConfirmed",
+    "rootMotionConfirmed",
+    "handMotionConfirmed",
+    "onlyGhostHandsDetected",
+    "currentBestActorPath",
+    "currentBestActorScene",
+    "latestActorCompletenessReport",
+    "latestLocalPlayerLifecycleDiscoveryReport",
+    "latestSummonContextReport",
+    "latestRealSummonProbeReport",
+    "latestPruningComparisonReport",
     "latestDumpPath",
     "latestDumpPaths",
 }
@@ -240,6 +263,39 @@ def main() -> int:
             f"Ready bootstrap is missing milestones: {', '.join(missing_milestones)}.",
         )
 
+    diagnostic_requests = [
+        ("latestActorCompletenessReport", "run_actor_completeness"),
+        ("latestLocalPlayerLifecycleDiscoveryReport", "run_local_player_lifecycle_discovery"),
+        ("latestSummonContextReport", "run_summon_context_discovery"),
+    ]
+    for status_field, request_type in diagnostic_requests:
+        if status.get(status_field):
+            continue
+        try:
+            diagnostic_response = client.bootstrap_request(request_type)
+            report["checks"].append({"name": request_type, "response": diagnostic_response})
+        except BridgeError as exc:
+            return finalize_failure(
+                logger,
+                report_path,
+                report,
+                EXIT_PROTOCOL_FAILURE,
+                "diagnostic_report_failure",
+                f"{request_type} failed: {exc}",
+            )
+        if response_error(diagnostic_response):
+            return finalize_failure(
+                logger,
+                report_path,
+                report,
+                EXIT_PROTOCOL_FAILURE,
+                "diagnostic_report_failure",
+                response_error_message(diagnostic_response) or f"{request_type} returned an error.",
+            )
+    if any(not status.get(field) for field, _ in diagnostic_requests):
+        status = client.status()
+        report["checks"].append({"name": "status_after_diagnostics", "response": status})
+
     latest_dump_paths = [
         Path(value)
         for value in status.get("latestDumpPaths", [])
@@ -249,6 +305,11 @@ def main() -> int:
         "scene_inventory_": False,
         "actor_discovery_": False,
         "capability_discovery_": False,
+        "actor_completeness_": False,
+        "local_player_lifecycle_discovery_": False,
+        "summon_context_discovery_": False,
+        "real_summon_probe_": False,
+        "actor_pruning_comparison_": False,
         "arena_build_report_": False,
     }
     selected_dump_paths: Dict[str, Path] = {}
@@ -299,6 +360,11 @@ def main() -> int:
     scene_inventory = parsed_dumps.get("scene_inventory_", {})
     actor_discovery = parsed_dumps.get("actor_discovery_", {})
     capability_discovery = parsed_dumps.get("capability_discovery_", {})
+    actor_completeness = parsed_dumps.get("actor_completeness_", {})
+    lifecycle_discovery = parsed_dumps.get("local_player_lifecycle_discovery_", {})
+    summon_context = parsed_dumps.get("summon_context_discovery_", {})
+    real_summon_probe = parsed_dumps.get("real_summon_probe_", {})
+    pruning_comparison = parsed_dumps.get("actor_pruning_comparison_", {})
     arena_report = parsed_dumps.get("arena_build_report_", {})
     floor_report = arena_report.get("floor")
     if not isinstance(floor_report, dict):
@@ -323,11 +389,32 @@ def main() -> int:
         dump_content_failures.append("arena report managerInitialized is not true")
     if floor_report.get("usableFloorConfirmed") is not True:
         dump_content_failures.append("arena floor usableFloorConfirmed is not true")
+    actor_warnings = []
+    classification = actor_completeness.get("classification") or status.get("actorCompletenessClassification")
+    if not classification:
+        dump_content_failures.append("actor completeness has no classification")
+    elif classification != "complete_local_actor":
+        actor_warnings.append(f"actor is {classification}")
+    if actor_completeness.get("onlyGhostHandsDetected") is True:
+        actor_warnings.append("only ghost hands detected")
+    if not lifecycle_discovery:
+        dump_content_failures.append("lifecycle discovery report missing or empty")
+    if not summon_context:
+        dump_content_failures.append("summon context report missing or empty")
+    if real_summon_probe.get("realSummonConfirmed") is not True:
+        actor_warnings.append("real summon not confirmed")
+    if real_summon_probe.get("status") not in {"blocked", "succeeded", "success"}:
+        dump_content_failures.append("real summon probe status is not blocked or successful")
+    if not pruning_comparison:
+        dump_content_failures.append("actor pruning comparison report missing or empty")
 
     report["checks"].append({
         "name": "bootstrap_dump_content",
         "invalidFiles": invalid_dump_files,
         "failures": dump_content_failures,
+        "actorWarnings": actor_warnings,
+        "actorCompletenessClassification": classification,
+        "realSummonConfirmed": real_summon_probe.get("realSummonConfirmed"),
         "sceneCount": len(scenes) if isinstance(scenes, list) else 0,
         "actorValidated": actor_discovery.get("actorValidated"),
         "headPath": actor_discovery.get("headPath"),

@@ -246,6 +246,9 @@ class OperatorConsole:
             "8": ("run_actor_interaction_probe", "Run gated collision interaction probe"),
             "9": ("run_arena_rebuild", "Run arena build/rebuild"),
             "10": ("retry_bootstrap", "Reset and retry failed bootstrap"),
+            "11": ("run_actor_completeness", "Run actor completeness report"),
+            "12": ("run_local_player_lifecycle_discovery", "Discover complete local-player lifecycle candidates"),
+            "13": ("run_summon_context_discovery", "Discover wider summon context"),
         }
         for key, (_, label) in options.items():
             print(f"{key}. {label}")

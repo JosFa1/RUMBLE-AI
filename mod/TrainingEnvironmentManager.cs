@@ -30,6 +30,7 @@ internal sealed class TrainingEnvironmentManager
     private int _lastTick;
     private float _lastTimeSeconds;
     private string _bootstrapStage = "Uninitialized";
+    private string _actorMode = "BootstrapRig";
     private bool _bootstrapReady;
     private bool _bootstrapFailed;
     private string _bootstrapFailureReason;
@@ -48,6 +49,28 @@ internal sealed class TrainingEnvironmentManager
     private string _actorInteractionProbeStatus = "not_run";
     private string _bootstrapLatestDumpPath;
     private List<string> _bootstrapLatestDumpPaths = new();
+    private string _actorCompletenessClassification = "unknown";
+    private bool _hasVisibleModel;
+    private int _rendererCount;
+    private bool _hasBody;
+    private bool _hasHead;
+    private bool _hasHands;
+    private bool _hasMovementSystem;
+    private bool _hasPhysicsOrGrounding;
+    private bool _hasHealth;
+    private bool _hasOwnership;
+    private bool _hasSummonContext;
+    private bool _realSummonConfirmed;
+    private bool _rootMotionConfirmed;
+    private bool _handMotionConfirmed;
+    private bool _onlyGhostHandsDetected;
+    private string _currentBestActorPath;
+    private string _currentBestActorScene;
+    private string _latestActorCompletenessReport;
+    private string _latestSummonContextReport;
+    private string _latestRealSummonProbeReport;
+    private string _latestLocalPlayerLifecycleDiscoveryReport;
+    private string _latestPruningComparisonReport;
 
     public TrainingEnvironmentManager(Action<string> logInfo, Action<string> logWarn, Action<string> logError)
     {
@@ -182,6 +205,7 @@ internal sealed class TrainingEnvironmentManager
         lock (_gate)
         {
             _bootstrapStage = state.stage ?? "Unknown";
+            _actorMode = state.actorMode ?? "BootstrapRig";
             _bootstrapReady = state.ready;
             _bootstrapFailed = state.failed;
             _bootstrapFailureReason = state.failureReason;
@@ -202,6 +226,107 @@ internal sealed class TrainingEnvironmentManager
             _bootstrapLatestDumpPaths = state.latestDumpPaths != null ? new List<string>(state.latestDumpPaths) : new List<string>();
             _lastUpdatedUtc = DateTime.UtcNow;
         }
+    }
+
+    public void UpdateActorCompleteness(ActorCompletenessReport report, string reportPath)
+    {
+        if (report == null)
+        {
+            return;
+        }
+        lock (_gate)
+        {
+            _actorCompletenessClassification = report.classification ?? "unknown";
+            _hasVisibleModel = report.hasVisibleModel;
+            _rendererCount = report.rendererCount;
+            _hasBody = report.hasBody;
+            _hasHead = report.hasHead;
+            _hasHands = report.hasHands;
+            _hasMovementSystem = report.hasMovementSystem;
+            _hasPhysicsOrGrounding = report.hasPhysicsOrGrounding;
+            _hasHealth = report.hasHealth;
+            _hasOwnership = report.hasOwnership;
+            _hasSummonContext = report.hasSummonContext;
+            _realSummonConfirmed = report.realSummonConfirmed || _realSummonConfirmed;
+            _rootMotionConfirmed = report.rootMotionConfirmed || _rootMotionConfirmed;
+            _handMotionConfirmed = report.handMotionConfirmed || _handMotionConfirmed;
+            _onlyGhostHandsDetected = report.onlyGhostHandsDetected;
+            _currentBestActorPath = report.currentBestActorPath ?? report.actorRootPath;
+            _currentBestActorScene = report.currentBestActorScene ?? report.actorScene;
+            _latestActorCompletenessReport = reportPath;
+            AddLatestDumpPath(reportPath);
+        }
+    }
+
+    public void UpdateLifecycleDiscovery(string bestActorPath, string bestActorScene, string reportPath)
+    {
+        lock (_gate)
+        {
+            if (!string.IsNullOrWhiteSpace(bestActorPath))
+            {
+                _currentBestActorPath = bestActorPath;
+                _currentBestActorScene = bestActorScene;
+            }
+            _latestLocalPlayerLifecycleDiscoveryReport = reportPath;
+            AddLatestDumpPath(reportPath);
+        }
+    }
+
+    public void UpdateSummonContext(bool hasContext, string reportPath)
+    {
+        lock (_gate)
+        {
+            _hasSummonContext = hasContext;
+            _latestSummonContextReport = reportPath;
+            AddLatestDumpPath(reportPath);
+        }
+    }
+
+    public void UpdateRealSummonProbe(bool confirmed, string reportPath)
+    {
+        lock (_gate)
+        {
+            _realSummonConfirmed = confirmed;
+            _latestRealSummonProbeReport = reportPath;
+            AddLatestDumpPath(reportPath);
+        }
+    }
+
+    public void UpdateMotionEvidence(bool rootMotionConfirmed, bool handMotionConfirmed)
+    {
+        lock (_gate)
+        {
+            _rootMotionConfirmed = _rootMotionConfirmed || rootMotionConfirmed;
+            _handMotionConfirmed = _handMotionConfirmed || handMotionConfirmed;
+            _lastUpdatedUtc = DateTime.UtcNow;
+        }
+    }
+
+    public void UpdatePruningComparison(string reportPath)
+    {
+        lock (_gate)
+        {
+            _latestPruningComparisonReport = reportPath;
+            AddLatestDumpPath(reportPath);
+        }
+    }
+
+    private void AddLatestDumpPath(string reportPath)
+    {
+        if (string.IsNullOrWhiteSpace(reportPath))
+        {
+            return;
+        }
+        _bootstrapLatestDumpPath = reportPath;
+        if (!_bootstrapLatestDumpPaths.Contains(reportPath, StringComparer.OrdinalIgnoreCase))
+        {
+            _bootstrapLatestDumpPaths.Add(reportPath);
+        }
+        while (_bootstrapLatestDumpPaths.Count > 32)
+        {
+            _bootstrapLatestDumpPaths.RemoveAt(0);
+        }
+        _lastUpdatedUtc = DateTime.UtcNow;
     }
 
     public TrainingEnvironmentStatus GetStatus()
@@ -227,6 +352,7 @@ internal sealed class TrainingEnvironmentManager
                 CurrentTick = _lastTick,
                 CurrentTimeSeconds = _lastTimeSeconds,
                 BootstrapStage = _bootstrapStage,
+                ActorMode = _actorMode,
                 BootstrapReady = _bootstrapReady,
                 BootstrapFailed = _bootstrapFailed,
                 BootstrapFailureReason = _bootstrapFailureReason,
@@ -243,8 +369,30 @@ internal sealed class TrainingEnvironmentManager
                 MoveProbeStatus = _moveProbeStatus,
                 MultiActorProbeStatus = _multiActorProbeStatus,
                 ActorInteractionProbeStatus = _actorInteractionProbeStatus,
+                ActorCompletenessClassification = _actorCompletenessClassification,
+                HasVisibleModel = _hasVisibleModel,
+                RendererCount = _rendererCount,
+                HasBody = _hasBody,
+                HasHead = _hasHead,
+                HasHands = _hasHands,
+                HasMovementSystem = _hasMovementSystem,
+                HasPhysicsOrGrounding = _hasPhysicsOrGrounding,
+                HasHealth = _hasHealth,
+                HasOwnership = _hasOwnership,
+                HasSummonContext = _hasSummonContext,
+                RealSummonConfirmed = _realSummonConfirmed,
+                RootMotionConfirmed = _rootMotionConfirmed,
+                HandMotionConfirmed = _handMotionConfirmed,
+                OnlyGhostHandsDetected = _onlyGhostHandsDetected,
+                CurrentBestActorPath = _currentBestActorPath,
+                CurrentBestActorScene = _currentBestActorScene,
+                LatestActorCompletenessReport = _latestActorCompletenessReport,
+                LatestSummonContextReport = _latestSummonContextReport,
+                LatestRealSummonProbeReport = _latestRealSummonProbeReport,
+                LatestLocalPlayerLifecycleDiscoveryReport = _latestLocalPlayerLifecycleDiscoveryReport,
+                LatestPruningComparisonReport = _latestPruningComparisonReport,
                 BootstrapLatestDumpPath = _bootstrapLatestDumpPath,
-                BootstrapLatestDumpPaths = new List<string>(_bootstrapLatestDumpPaths)
+                BootstrapLatestDumpPaths = BuildLatestDumpPathsLocked()
             };
         }
     }
@@ -273,6 +421,7 @@ internal sealed class TrainingEnvironmentManager
                 lastReward = null,
                 lastError = _lastError,
                 bootstrapStage = _bootstrapStage,
+                actorMode = _actorMode,
                 bootstrapReady = _bootstrapReady,
                 bootstrapFailed = _bootstrapFailed,
                 bootstrapFailureReason = _bootstrapFailureReason,
@@ -289,11 +438,54 @@ internal sealed class TrainingEnvironmentManager
                 moveProbeStatus = _moveProbeStatus,
                 multiActorProbeStatus = _multiActorProbeStatus,
                 actorInteractionProbeStatus = _actorInteractionProbeStatus,
+                actorCompletenessClassification = _actorCompletenessClassification,
+                hasVisibleModel = _hasVisibleModel,
+                rendererCount = _rendererCount,
+                hasBody = _hasBody,
+                hasHead = _hasHead,
+                hasHands = _hasHands,
+                hasMovementSystem = _hasMovementSystem,
+                hasPhysicsOrGrounding = _hasPhysicsOrGrounding,
+                hasHealth = _hasHealth,
+                hasOwnership = _hasOwnership,
+                hasSummonContext = _hasSummonContext,
+                realSummonConfirmed = _realSummonConfirmed,
+                rootMotionConfirmed = _rootMotionConfirmed,
+                handMotionConfirmed = _handMotionConfirmed,
+                onlyGhostHandsDetected = _onlyGhostHandsDetected,
+                currentBestActorPath = _currentBestActorPath,
+                currentBestActorScene = _currentBestActorScene,
+                latestActorCompletenessReport = _latestActorCompletenessReport,
+                latestSummonContextReport = _latestSummonContextReport,
+                latestRealSummonProbeReport = _latestRealSummonProbeReport,
+                latestLocalPlayerLifecycleDiscoveryReport = _latestLocalPlayerLifecycleDiscoveryReport,
+                latestPruningComparisonReport = _latestPruningComparisonReport,
                 latestDumpPath = _bootstrapLatestDumpPath,
-                latestDumpPaths = new List<string>(_bootstrapLatestDumpPaths),
+                latestDumpPaths = BuildLatestDumpPathsLocked(),
                 error = null
             };
         }
+    }
+
+    private List<string> BuildLatestDumpPathsLocked()
+    {
+        var paths = new List<string>(_bootstrapLatestDumpPaths);
+        foreach (var path in new[]
+                 {
+                     _latestActorCompletenessReport,
+                     _latestLocalPlayerLifecycleDiscoveryReport,
+                     _latestSummonContextReport,
+                     _latestRealSummonProbeReport,
+                     _latestPruningComparisonReport
+                 })
+        {
+            if (!string.IsNullOrWhiteSpace(path) &&
+                !paths.Contains(path, StringComparer.OrdinalIgnoreCase))
+            {
+                paths.Add(path);
+            }
+        }
+        return paths;
     }
 
     private bool StartEpisodeInternal(string reason, bool logStatus)
@@ -344,6 +536,7 @@ internal sealed class TrainingEnvironmentManager
             $"trainingScene={OrNone(status.CurrentTrainingSceneName)} " +
             $"playerRoot={OrNone(status.CurrentPlayerRootPath)} " +
             $"bootstrapStage={OrNone(status.BootstrapStage)} " +
+            $"actorMode={OrNone(status.ActorMode)} " +
             $"lastError={OrNone(status.LastError)} " +
             $"status={OrNone(status.StatusMessage)}");
     }
@@ -390,6 +583,7 @@ internal sealed class TrainingEnvironmentStatus
     public int CurrentTick { get; set; }
     public float CurrentTimeSeconds { get; set; }
     public string BootstrapStage { get; set; }
+    public string ActorMode { get; set; }
     public bool BootstrapReady { get; set; }
     public bool BootstrapFailed { get; set; }
     public string BootstrapFailureReason { get; set; }
@@ -408,6 +602,28 @@ internal sealed class TrainingEnvironmentStatus
     public string ActorInteractionProbeStatus { get; set; }
     public string BootstrapLatestDumpPath { get; set; }
     public List<string> BootstrapLatestDumpPaths { get; set; }
+    public string ActorCompletenessClassification { get; set; }
+    public bool HasVisibleModel { get; set; }
+    public int RendererCount { get; set; }
+    public bool HasBody { get; set; }
+    public bool HasHead { get; set; }
+    public bool HasHands { get; set; }
+    public bool HasMovementSystem { get; set; }
+    public bool HasPhysicsOrGrounding { get; set; }
+    public bool HasHealth { get; set; }
+    public bool HasOwnership { get; set; }
+    public bool HasSummonContext { get; set; }
+    public bool RealSummonConfirmed { get; set; }
+    public bool RootMotionConfirmed { get; set; }
+    public bool HandMotionConfirmed { get; set; }
+    public bool OnlyGhostHandsDetected { get; set; }
+    public string CurrentBestActorPath { get; set; }
+    public string CurrentBestActorScene { get; set; }
+    public string LatestActorCompletenessReport { get; set; }
+    public string LatestSummonContextReport { get; set; }
+    public string LatestRealSummonProbeReport { get; set; }
+    public string LatestLocalPlayerLifecycleDiscoveryReport { get; set; }
+    public string LatestPruningComparisonReport { get; set; }
 }
 
 internal sealed class TrainingBridgeStatus
@@ -430,6 +646,7 @@ internal sealed class TrainingBridgeStatus
     public float? lastReward { get; set; }
     public string lastError { get; set; }
     public string bootstrapStage { get; set; }
+    public string actorMode { get; set; }
     public bool bootstrapReady { get; set; }
     public bool bootstrapFailed { get; set; }
     public string bootstrapFailureReason { get; set; }
@@ -448,5 +665,27 @@ internal sealed class TrainingBridgeStatus
     public string actorInteractionProbeStatus { get; set; }
     public string latestDumpPath { get; set; }
     public List<string> latestDumpPaths { get; set; }
+    public string actorCompletenessClassification { get; set; }
+    public bool hasVisibleModel { get; set; }
+    public int rendererCount { get; set; }
+    public bool hasBody { get; set; }
+    public bool hasHead { get; set; }
+    public bool hasHands { get; set; }
+    public bool hasMovementSystem { get; set; }
+    public bool hasPhysicsOrGrounding { get; set; }
+    public bool hasHealth { get; set; }
+    public bool hasOwnership { get; set; }
+    public bool hasSummonContext { get; set; }
+    public bool realSummonConfirmed { get; set; }
+    public bool rootMotionConfirmed { get; set; }
+    public bool handMotionConfirmed { get; set; }
+    public bool onlyGhostHandsDetected { get; set; }
+    public string currentBestActorPath { get; set; }
+    public string currentBestActorScene { get; set; }
+    public string latestActorCompletenessReport { get; set; }
+    public string latestSummonContextReport { get; set; }
+    public string latestRealSummonProbeReport { get; set; }
+    public string latestLocalPlayerLifecycleDiscoveryReport { get; set; }
+    public string latestPruningComparisonReport { get; set; }
     public TrainingBridgeErrorInfo error { get; set; }
 }
