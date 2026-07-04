@@ -187,6 +187,28 @@ The real summon probe report is required even when no invocation is safe. A bloc
 
 Next exact goal after this work: discover and trigger the complete local-player lifecycle after Gym load, without breaking the now-green staged bootstrap, then re-run actor completeness and summon context discovery.
 
+## Complete Local-Player Lifecycle
+
+`confirmed`: Before this lifecycle pass, the selected actor was `BootLoaderPlayer`, and it was classified as `partial_tracking_rig`.
+
+`confirmed`: `BootLoaderPlayer` is partial because it has head and hand transforms but lacks confirmed visible model/body, root movement, actor-bound movement, physics/grounding, health, ownership, summon context, and real summon evidence.
+
+`confirmed`: This pass added passive lifecycle reports for timeline snapshots, trigger discovery, mode comparison, trigger probe, actor candidate ranking, and missing lifecycle dependency. These reports are wired into bridge status, operator diagnostics, and full validation.
+
+`confirmed`: The trigger probe invokes zero reflected methods by default. Spawn, ownership, RPC, pool, damage, network, and broad lifecycle methods remain blocked unless a future report proves a specific safe local context.
+
+`confirmed`: Build and offline validation pass after the lifecycle diagnostic changes.
+
+`failed`: Live validation and live probes were blocked in this pass because the bridge was not reachable on `127.0.0.1:8765`; no new live actor, mode, trigger, or summon outcome is claimed.
+
+`unconfirmed`: Whether a complete local actor appears after the new timeline/mode/trigger reports run in a relaunched game.
+
+`unconfirmed`: Whether Loader-held, Gym-only, no-move, or no-prune startup modes change actor availability. The current code records those modes as comparison targets, but a fresh live startup is required to prove them causally.
+
+`unconfirmed`: Whether practice/match/session/profile/VR input initialization is the missing dependency. The missing-dependency report currently names practice or bootloader local-player initialization context as the likely next path when no complete actor is found.
+
+`confirmed`: Next exact goal: relaunch RUMBLE with the rebuilt `AI_Train.dll`, run full validation, inspect `latest_lifecycle_timeline.json`, `latest_lifecycle_trigger_discovery.json`, `latest_lifecycle_mode_comparison.json`, `latest_lifecycle_trigger_probe.json`, `latest_actor_candidate_ranking.json`, and `latest_missing_lifecycle_dependency_report.json`, then choose the next bounded lifecycle startup mode.
+
 ## First Manual Test Commands
 
 Build:

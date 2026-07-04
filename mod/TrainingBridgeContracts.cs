@@ -25,7 +25,13 @@ internal sealed class TrainingBridgeBootstrapActions
     public System.Func<string, TrainingBridgeBootstrapActionResult> RunActorDiscovery { get; set; }
     public System.Func<string, TrainingBridgeBootstrapActionResult> RunCapabilityDiscovery { get; set; }
     public System.Func<string, TrainingBridgeBootstrapActionResult> RunActorCompleteness { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunLifecycleTimeline { get; set; }
     public System.Func<string, TrainingBridgeBootstrapActionResult> RunLocalPlayerLifecycleDiscovery { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunLifecycleTriggerDiscovery { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunLifecycleModeComparison { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunLifecycleTriggerProbe { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunActorCandidateRanking { get; set; }
+    public System.Func<string, TrainingBridgeBootstrapActionResult> RunMissingLifecycleDependencyReport { get; set; }
     public System.Func<string, TrainingBridgeBootstrapActionResult> RunSummonContextDiscovery { get; set; }
     public System.Func<string, TrainingBridgeBootstrapActionResult> RunSingleActorSummonProbe { get; set; }
     public System.Func<string, TrainingBridgeBootstrapActionResult> RunMoveProbe { get; set; }

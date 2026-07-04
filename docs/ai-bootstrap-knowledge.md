@@ -195,3 +195,23 @@ This document is for AI continuation. Every claim is labeled `confirmed`, `likel
 `confirmed`: The current Ready state is enough for bridge/environment validation, observation, reset, and hand-target stepping. It is not enough for AI training that needs a complete local actor, game movement, health, ownership, combat, or real summon mechanics.
 
 `confirmed`: Next exact goal: discover and trigger the complete local-player lifecycle after Gym load, without breaking the now-green staged bootstrap, then re-run actor completeness and summon context discovery.
+
+## Complete Local-Player Lifecycle Diagnostics
+
+`confirmed`: The July 3, 2026 lifecycle code pass adds `mod/ActorLifecycleReportService.cs` and does not rewrite the staged bootstrap, arena builder, bridge, observation, action, reward, or active probe systems.
+
+`confirmed`: The bridge now accepts passive lifecycle requests `run_lifecycle_timeline`, `run_lifecycle_trigger_discovery`, `run_lifecycle_mode_comparison`, `run_lifecycle_trigger_probe`, `run_actor_candidate_ranking`, and `run_missing_lifecycle_dependency_report`.
+
+`confirmed`: Status now exposes `completeActorFound`, `bestCompleteActorPath`, `lifecycleMode`, `lifecycleProbeStatus`, `missingLifecycleDependency`, and latest dump paths for lifecycle timeline, trigger discovery, mode comparison, trigger probe, actor candidate ranking, and missing dependency reports.
+
+`confirmed`: The new lifecycle trigger probe is blocked/passive by default. It records before/after snapshots and skipped candidates, with `invokedCount=0`; it does not call reflected lifecycle, spawn, ownership, pool, network, damage, or gameplay methods.
+
+`confirmed`: `dotnet build mod\AI_Train.csproj -c Debug` passed after the lifecycle diagnostic changes with zero warnings and zero errors.
+
+`confirmed`: `python scripts\run_offline_validation.py` passed after the lifecycle diagnostic changes.
+
+`failed`: Live bridge validation was blocked because `127.0.0.1:8765` refused connections; RUMBLE was not running with the mod bridge loaded during this pass.
+
+`unconfirmed`: The new lifecycle reports have not yet been produced by a live RUMBLE relaunch in this pass. They are generated after arena initialization and can also be requested from operator diagnostics once the bridge is reachable.
+
+`confirmed`: Next exact goal is to relaunch RUMBLE with the rebuilt DLL, run `python scripts\run_full_validation.py`, inspect the new lifecycle reports, and only then decide whether a fresh Loader-held, Gym-only, no-move, or no-prune startup mode is needed.

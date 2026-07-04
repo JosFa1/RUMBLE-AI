@@ -366,6 +366,17 @@ internal sealed class TrainingBridgeServer : IDisposable
                         actorInteractionProbeStatus = "not_run",
                         latestDumpPath = null,
                         latestDumpPaths = new List<string>(),
+                        completeActorFound = false,
+                        bestCompleteActorPath = null,
+                        lifecycleMode = "unavailable",
+                        lifecycleProbeStatus = "unavailable",
+                        missingLifecycleDependency = null,
+                        latestLifecycleTimelineReport = null,
+                        latestLifecycleTriggerDiscoveryReport = null,
+                        latestLifecycleModeComparisonReport = null,
+                        latestLifecycleTriggerProbeReport = null,
+                        latestActorCandidateRankingReport = null,
+                        latestMissingLifecycleDependencyReport = null,
                         error = null
                     };
                     RecordRequestOutcome("status", null, null);
@@ -1098,9 +1109,39 @@ internal sealed class TrainingBridgeServer : IDisposable
             return InvokeBootstrapAction(requestType, _bootstrapActions.RunActorCompleteness);
         }
 
+        if (string.Equals(requestType, "run_lifecycle_timeline", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunLifecycleTimeline);
+        }
+
         if (string.Equals(requestType, "run_local_player_lifecycle_discovery", StringComparison.OrdinalIgnoreCase))
         {
             return InvokeBootstrapAction(requestType, _bootstrapActions.RunLocalPlayerLifecycleDiscovery);
+        }
+
+        if (string.Equals(requestType, "run_lifecycle_trigger_discovery", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunLifecycleTriggerDiscovery);
+        }
+
+        if (string.Equals(requestType, "run_lifecycle_mode_comparison", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunLifecycleModeComparison);
+        }
+
+        if (string.Equals(requestType, "run_lifecycle_trigger_probe", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunLifecycleTriggerProbe);
+        }
+
+        if (string.Equals(requestType, "run_actor_candidate_ranking", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunActorCandidateRanking);
+        }
+
+        if (string.Equals(requestType, "run_missing_lifecycle_dependency_report", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvokeBootstrapAction(requestType, _bootstrapActions.RunMissingLifecycleDependencyReport);
         }
 
         if (string.Equals(requestType, "run_summon_context_discovery", StringComparison.OrdinalIgnoreCase))
@@ -1404,7 +1445,13 @@ internal sealed class TrainingBridgeServer : IDisposable
                string.Equals(requestType, "run_actor_discovery", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(requestType, "run_capability_discovery", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(requestType, "run_actor_completeness", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_lifecycle_timeline", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(requestType, "run_local_player_lifecycle_discovery", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_lifecycle_trigger_discovery", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_lifecycle_mode_comparison", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_lifecycle_trigger_probe", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_actor_candidate_ranking", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(requestType, "run_missing_lifecycle_dependency_report", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(requestType, "run_summon_context_discovery", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(requestType, "run_single_actor_summon_probe", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(requestType, "run_move_probe", StringComparison.OrdinalIgnoreCase) ||

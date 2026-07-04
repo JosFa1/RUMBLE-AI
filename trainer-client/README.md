@@ -124,6 +124,8 @@ Paths stored in metadata are relative to `trainer-client/`, so generated logs no
 - `activeScene` and `loadedScenes`: current scene inventory summary reported by the staged bootstrap.
 - `actorDiscoveryStatus` and `capabilityDiscoveryStatus`: passive discovery progress before arena build.
 - `summonProbeStatus`, `moveProbeStatus`, `multiActorProbeStatus`, and `actorInteractionProbeStatus`: probe states. Normal startup leaves them `not_run`; default-off requests report `disabled_by_config`, and manually enabled probes report their evidence-backed outcome.
+- `completeActorFound`, `bestCompleteActorPath`, `lifecycleMode`, `lifecycleProbeStatus`, and `missingLifecycleDependency`: actor-ready lifecycle status. These remain separate from `bootstrapReady`.
+- `latestLifecycleTimelineReport`, `latestLifecycleTriggerDiscoveryReport`, `latestLifecycleModeComparisonReport`, `latestLifecycleTriggerProbeReport`, `latestActorCandidateRankingReport`, and `latestMissingLifecycleDependencyReport`: lifecycle dump paths generated during normal startup or operator diagnostics.
 - `latestDumpPath` and `latestDumpPaths`: recent mod dump files to inspect after startup or failure, including scene inventory, actor discovery, and capability discovery reports when those stages have run.
 - `protocolVersion`: server protocol version; expected client value is in `config.json`.
 - `episodeId` and `episodeStep`: current episode counters.

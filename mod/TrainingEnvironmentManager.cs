@@ -67,6 +67,17 @@ internal sealed class TrainingEnvironmentManager
     private string _currentBestActorPath;
     private string _currentBestActorScene;
     private string _latestActorCompletenessReport;
+    private string _latestLifecycleTimelineReport;
+    private string _latestLifecycleTriggerDiscoveryReport;
+    private string _latestLifecycleModeComparisonReport;
+    private string _latestLifecycleTriggerProbeReport;
+    private string _latestActorCandidateRankingReport;
+    private string _latestMissingLifecycleDependencyReport;
+    private string _lifecycleMode = "CurrentNormalMode";
+    private string _lifecycleProbeStatus = "not_run";
+    private string _missingLifecycleDependency;
+    private bool _completeActorFound;
+    private string _bestCompleteActorPath;
     private string _latestSummonContextReport;
     private string _latestRealSummonProbeReport;
     private string _latestLocalPlayerLifecycleDiscoveryReport;
@@ -272,6 +283,56 @@ internal sealed class TrainingEnvironmentManager
         }
     }
 
+    public void UpdateLifecycleReport(string reportKind, string reportPath, bool? completeActorFound = null, string bestCompleteActorPath = null, string missingDependency = null, string lifecycleMode = null, string probeStatus = null)
+    {
+        lock (_gate)
+        {
+            switch (reportKind)
+            {
+                case "timeline":
+                    _latestLifecycleTimelineReport = reportPath;
+                    break;
+                case "triggerDiscovery":
+                    _latestLifecycleTriggerDiscoveryReport = reportPath;
+                    break;
+                case "modeComparison":
+                    _latestLifecycleModeComparisonReport = reportPath;
+                    break;
+                case "triggerProbe":
+                    _latestLifecycleTriggerProbeReport = reportPath;
+                    break;
+                case "candidateRanking":
+                    _latestActorCandidateRankingReport = reportPath;
+                    break;
+                case "missingDependency":
+                    _latestMissingLifecycleDependencyReport = reportPath;
+                    break;
+            }
+
+            if (completeActorFound.HasValue)
+            {
+                _completeActorFound = completeActorFound.Value;
+            }
+            if (!string.IsNullOrWhiteSpace(bestCompleteActorPath))
+            {
+                _bestCompleteActorPath = bestCompleteActorPath;
+            }
+            if (!string.IsNullOrWhiteSpace(missingDependency))
+            {
+                _missingLifecycleDependency = missingDependency;
+            }
+            if (!string.IsNullOrWhiteSpace(lifecycleMode))
+            {
+                _lifecycleMode = lifecycleMode;
+            }
+            if (!string.IsNullOrWhiteSpace(probeStatus))
+            {
+                _lifecycleProbeStatus = probeStatus;
+            }
+            AddLatestDumpPath(reportPath);
+        }
+    }
+
     public void UpdateSummonContext(bool hasContext, string reportPath)
     {
         lock (_gate)
@@ -387,6 +448,17 @@ internal sealed class TrainingEnvironmentManager
                 CurrentBestActorPath = _currentBestActorPath,
                 CurrentBestActorScene = _currentBestActorScene,
                 LatestActorCompletenessReport = _latestActorCompletenessReport,
+                LatestLifecycleTimelineReport = _latestLifecycleTimelineReport,
+                LatestLifecycleTriggerDiscoveryReport = _latestLifecycleTriggerDiscoveryReport,
+                LatestLifecycleModeComparisonReport = _latestLifecycleModeComparisonReport,
+                LatestLifecycleTriggerProbeReport = _latestLifecycleTriggerProbeReport,
+                LatestActorCandidateRankingReport = _latestActorCandidateRankingReport,
+                LatestMissingLifecycleDependencyReport = _latestMissingLifecycleDependencyReport,
+                LifecycleMode = _lifecycleMode,
+                LifecycleProbeStatus = _lifecycleProbeStatus,
+                MissingLifecycleDependency = _missingLifecycleDependency,
+                CompleteActorFound = _completeActorFound,
+                BestCompleteActorPath = _bestCompleteActorPath,
                 LatestSummonContextReport = _latestSummonContextReport,
                 LatestRealSummonProbeReport = _latestRealSummonProbeReport,
                 LatestLocalPlayerLifecycleDiscoveryReport = _latestLocalPlayerLifecycleDiscoveryReport,
@@ -456,6 +528,17 @@ internal sealed class TrainingEnvironmentManager
                 currentBestActorPath = _currentBestActorPath,
                 currentBestActorScene = _currentBestActorScene,
                 latestActorCompletenessReport = _latestActorCompletenessReport,
+                latestLifecycleTimelineReport = _latestLifecycleTimelineReport,
+                latestLifecycleTriggerDiscoveryReport = _latestLifecycleTriggerDiscoveryReport,
+                latestLifecycleModeComparisonReport = _latestLifecycleModeComparisonReport,
+                latestLifecycleTriggerProbeReport = _latestLifecycleTriggerProbeReport,
+                latestActorCandidateRankingReport = _latestActorCandidateRankingReport,
+                latestMissingLifecycleDependencyReport = _latestMissingLifecycleDependencyReport,
+                lifecycleMode = _lifecycleMode,
+                lifecycleProbeStatus = _lifecycleProbeStatus,
+                missingLifecycleDependency = _missingLifecycleDependency,
+                completeActorFound = _completeActorFound,
+                bestCompleteActorPath = _bestCompleteActorPath,
                 latestSummonContextReport = _latestSummonContextReport,
                 latestRealSummonProbeReport = _latestRealSummonProbeReport,
                 latestLocalPlayerLifecycleDiscoveryReport = _latestLocalPlayerLifecycleDiscoveryReport,
@@ -473,6 +556,12 @@ internal sealed class TrainingEnvironmentManager
         foreach (var path in new[]
                  {
                      _latestActorCompletenessReport,
+                     _latestLifecycleTimelineReport,
+                     _latestLifecycleTriggerDiscoveryReport,
+                     _latestLifecycleModeComparisonReport,
+                     _latestLifecycleTriggerProbeReport,
+                     _latestActorCandidateRankingReport,
+                     _latestMissingLifecycleDependencyReport,
                      _latestLocalPlayerLifecycleDiscoveryReport,
                      _latestSummonContextReport,
                      _latestRealSummonProbeReport,
@@ -620,6 +709,17 @@ internal sealed class TrainingEnvironmentStatus
     public string CurrentBestActorPath { get; set; }
     public string CurrentBestActorScene { get; set; }
     public string LatestActorCompletenessReport { get; set; }
+    public string LatestLifecycleTimelineReport { get; set; }
+    public string LatestLifecycleTriggerDiscoveryReport { get; set; }
+    public string LatestLifecycleModeComparisonReport { get; set; }
+    public string LatestLifecycleTriggerProbeReport { get; set; }
+    public string LatestActorCandidateRankingReport { get; set; }
+    public string LatestMissingLifecycleDependencyReport { get; set; }
+    public string LifecycleMode { get; set; }
+    public string LifecycleProbeStatus { get; set; }
+    public string MissingLifecycleDependency { get; set; }
+    public bool CompleteActorFound { get; set; }
+    public string BestCompleteActorPath { get; set; }
     public string LatestSummonContextReport { get; set; }
     public string LatestRealSummonProbeReport { get; set; }
     public string LatestLocalPlayerLifecycleDiscoveryReport { get; set; }
@@ -683,6 +783,17 @@ internal sealed class TrainingBridgeStatus
     public string currentBestActorPath { get; set; }
     public string currentBestActorScene { get; set; }
     public string latestActorCompletenessReport { get; set; }
+    public string latestLifecycleTimelineReport { get; set; }
+    public string latestLifecycleTriggerDiscoveryReport { get; set; }
+    public string latestLifecycleModeComparisonReport { get; set; }
+    public string latestLifecycleTriggerProbeReport { get; set; }
+    public string latestActorCandidateRankingReport { get; set; }
+    public string latestMissingLifecycleDependencyReport { get; set; }
+    public string lifecycleMode { get; set; }
+    public string lifecycleProbeStatus { get; set; }
+    public string missingLifecycleDependency { get; set; }
+    public bool completeActorFound { get; set; }
+    public string bestCompleteActorPath { get; set; }
     public string latestSummonContextReport { get; set; }
     public string latestRealSummonProbeReport { get; set; }
     public string latestLocalPlayerLifecycleDiscoveryReport { get; set; }

@@ -52,7 +52,7 @@ python scripts/operator_console.py
 ```
 
 Use menu option `1` for status, `2` for observation, `3` for reset, and `4` for a safe step.
-Use menu option `13` for bootstrap diagnostics such as scene inventory, actor discovery, and capability discovery reports.
+Use menu option `13` for bootstrap and lifecycle diagnostics such as scene inventory, actor discovery, capability discovery, actor completeness, lifecycle timeline, trigger discovery, mode comparison, trigger probe, candidate ranking, missing-dependency, and summon-context reports.
 
 Expected pass signs: status shows `bootstrapStage=Ready`, `bootstrapReady=true`, `gymLoaded=true`, `primaryActorFound=true`, `arenaBuilt=true`, `sceneReady=true`, `playerRootFound=true`, protocol `0.3`, and no last error. The live validator must also parse the current scene/actor/capability/arena dumps, confirm exact head/hand paths, passive capability discovery, `managerInitialized=true`, `usableFloorConfirmed=true`, and a finite safe-step reward.
 
@@ -93,7 +93,7 @@ python scripts/run_full_validation.py
 
 Expected pass signs: final line is `PASS`, a run folder is created, and `validation_report.json` is saved.
 
-Expected actor-completeness signs for the current partial state: `latest_actor_completeness.json`, `latest_local_player_lifecycle_discovery.json`, `latest_summon_context_discovery.json`, `latest_real_summon_probe.json`, and `latest_actor_pruning_comparison.json` exist and parse. `partial_tracking_rig`, `onlyGhostHandsDetected=true`, and `realSummonConfirmed=false` are acceptable warnings, not bridge failures.
+Expected actor-lifecycle signs for the current partial state: `latest_actor_completeness.json`, `latest_lifecycle_timeline.json`, `latest_local_player_lifecycle_discovery.json`, `latest_lifecycle_trigger_discovery.json`, `latest_lifecycle_mode_comparison.json`, `latest_lifecycle_trigger_probe.json`, `latest_actor_candidate_ranking.json`, `latest_missing_lifecycle_dependency_report.json`, `latest_summon_context_discovery.json`, `latest_real_summon_probe.json`, and `latest_actor_pruning_comparison.json` exist and parse. `partial_tracking_rig`, `onlyGhostHandsDetected=true`, `completeActorFound=false`, `lifecycleProbeStatus=blocked`, and `realSummonConfirmed=false` are acceptable warnings, not bridge failures.
 
 Failure signs: connection failure, `bootstrapFailed=true`, `bootstrapReady=false`, `sceneReady=false`, required actor-completeness reports missing, malformed request checks fail, safe step reward is not finite, clamped step lacks clamp info, or stability run fails.
 

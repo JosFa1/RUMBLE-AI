@@ -247,8 +247,14 @@ class OperatorConsole:
             "9": ("run_arena_rebuild", "Run arena build/rebuild"),
             "10": ("retry_bootstrap", "Reset and retry failed bootstrap"),
             "11": ("run_actor_completeness", "Run actor completeness report"),
-            "12": ("run_local_player_lifecycle_discovery", "Discover complete local-player lifecycle candidates"),
-            "13": ("run_summon_context_discovery", "Discover wider summon context"),
+            "12": ("run_lifecycle_timeline", "Write lifecycle timeline snapshot"),
+            "13": ("run_local_player_lifecycle_discovery", "Discover complete local-player lifecycle candidates"),
+            "14": ("run_lifecycle_trigger_discovery", "Discover lifecycle trigger candidates"),
+            "15": ("run_lifecycle_mode_comparison", "Compare lifecycle modes"),
+            "16": ("run_lifecycle_trigger_probe", "Run safe lifecycle trigger probe report"),
+            "17": ("run_actor_candidate_ranking", "Rank actor candidates"),
+            "18": ("run_missing_lifecycle_dependency_report", "Write missing lifecycle dependency report"),
+            "19": ("run_summon_context_discovery", "Discover wider summon context"),
         }
         for key, (_, label) in options.items():
             print(f"{key}. {label}")

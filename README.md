@@ -133,6 +133,10 @@ The mod writes staged bootstrap evidence under `UserData\AI_Train\Dumps\`, inclu
 - The preserved bootstrap actor currently exposes no live health, movement, or configured summon component.
 - Full second-actor support, real summon/modifier execution, and combat damage remain unconfirmed.
 
+## Complete Local-Player Lifecycle
+
+The selected actor before this lifecycle pass is `BootLoaderPlayer` (`confirmed`). It remains treated as a fallback partial tracking rig until a live run proves a better candidate (`confirmed`). The new lifecycle diagnostics write timeline, trigger discovery, lifecycle mode comparison, trigger probe, actor candidate ranking, and missing-dependency reports under `UserData\AI_Train\Dumps` (`confirmed by build/offline validation; live dump creation still requires RUMBLE running`). The trigger probe is passive by default and records zero reflected invocations unless a future report proves a safe local owner/init context (`confirmed`). The next exact live goal is to relaunch RUMBLE, run full validation, inspect the new reports, and then decide whether Loader-held, Gym-only, no-move, or no-prune startup modes are needed (`unconfirmed until live`).
+
 ## What not to do yet
 
 - Do not add PyTorch, Gymnasium, self-play, or model training code.

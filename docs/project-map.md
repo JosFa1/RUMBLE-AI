@@ -28,6 +28,7 @@ Important mod files:
 - `mod/TrainingProtocol.cs`: current protocol version.
 - `mod/TrainingExplorationService.cs`: retained legacy debug report support.
 - `mod/TrainingExplorationProbeService.cs`: bounded manual summon, movement, dummy-target, and interaction probes.
+- `mod/ActorLifecycleReportService.cs`: passive lifecycle timeline, trigger discovery, mode comparison, trigger probe, actor ranking, and missing-dependency reports for Actor Ready work.
 - `mod/TrainingRuntimeTools.cs`: runtime host, monitor camera, and probe contact recorder.
 
 ## Trainer Client Architecture
@@ -67,6 +68,15 @@ Implemented request types are:
 - `run_scene_inventory`
 - `run_actor_discovery`
 - `run_capability_discovery`
+- `run_actor_completeness`
+- `run_lifecycle_timeline`
+- `run_local_player_lifecycle_discovery`
+- `run_lifecycle_trigger_discovery`
+- `run_lifecycle_mode_comparison`
+- `run_lifecycle_trigger_probe`
+- `run_actor_candidate_ranking`
+- `run_missing_lifecycle_dependency_report`
+- `run_summon_context_discovery`
 - `run_single_actor_summon_probe`
 - `run_move_probe`
 - `run_multi_actor_probe`

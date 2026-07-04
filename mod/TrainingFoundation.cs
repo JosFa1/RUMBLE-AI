@@ -109,6 +109,7 @@ internal sealed class TrainingFoundation : IDisposable
     private TrainingExplorationService _explorationService;
     private TrainingExplorationProbeService _activeProbeService;
     private ActorCompletenessService _actorCompletenessService;
+    private ActorLifecycleReportService _actorLifecycleReportService;
     private TrainingBridgeServer _bridgeServer;
     private TrainingBootstrapOrchestrator _bootstrapOrchestrator;
     private string _logRoot;
@@ -157,7 +158,13 @@ internal sealed class TrainingFoundation : IDisposable
             RunActorDiscovery = RunActorDiscoveryBridgeRequest,
             RunCapabilityDiscovery = RunCapabilityDiscoveryBridgeRequest,
             RunActorCompleteness = RunActorCompletenessBridgeRequest,
+            RunLifecycleTimeline = RunLifecycleTimelineBridgeRequest,
             RunLocalPlayerLifecycleDiscovery = RunLocalPlayerLifecycleDiscoveryBridgeRequest,
+            RunLifecycleTriggerDiscovery = RunLifecycleTriggerDiscoveryBridgeRequest,
+            RunLifecycleModeComparison = RunLifecycleModeComparisonBridgeRequest,
+            RunLifecycleTriggerProbe = RunLifecycleTriggerProbeBridgeRequest,
+            RunActorCandidateRanking = RunActorCandidateRankingBridgeRequest,
+            RunMissingLifecycleDependencyReport = RunMissingLifecycleDependencyReportBridgeRequest,
             RunSummonContextDiscovery = RunSummonContextDiscoveryBridgeRequest,
             RunSingleActorSummonProbe = RunSingleActorSummonProbeBridgeRequest,
             RunMoveProbe = RunMoveProbeBridgeRequest,
@@ -188,6 +195,10 @@ internal sealed class TrainingFoundation : IDisposable
             WriteJson,
             LogInfo,
             LogWarn);
+        _actorLifecycleReportService = new ActorLifecycleReportService(
+            ResolvePrimaryActor,
+            WriteJson,
+            LogInfo);
 
         LogInfo("AI_Train bootstrap initialized.");
         LogInfo($"Bootstrap mode: {(UseStagedBootstrap ? "staged" : "legacy")} actorMode={ActorMode} legacyFallback={EnableLegacyBootstrapFallback}.");
@@ -777,6 +788,13 @@ internal sealed class TrainingFoundation : IDisposable
             "actor_completeness_failed");
     }
 
+    private TrainingBridgeBootstrapActionResult RunLifecycleTimelineBridgeRequest(string reason)
+    {
+        var result = _actorLifecycleReportService?.RunLifecycleTimeline(reason, ActorMode);
+        _trainingEnvironmentManager?.UpdateLifecycleReport("timeline", result?.reportPath);
+        return ToBridgeResult(result, "Lifecycle timeline report written.", "lifecycle_timeline_failed");
+    }
+
     private TrainingBridgeBootstrapActionResult RunLocalPlayerLifecycleDiscoveryBridgeRequest(string reason)
     {
         var result = _actorCompletenessService?.RunLifecycleDiscovery(reason, ActorMode);
@@ -788,6 +806,58 @@ internal sealed class TrainingFoundation : IDisposable
                 result.reportPath);
         }
         return ToBridgeResult(result, "Local-player lifecycle discovery written.", "lifecycle_discovery_failed");
+    }
+
+    private TrainingBridgeBootstrapActionResult RunLifecycleTriggerDiscoveryBridgeRequest(string reason)
+    {
+        var result = _actorLifecycleReportService?.RunLifecycleTriggerDiscovery(reason, ActorMode);
+        _trainingEnvironmentManager?.UpdateLifecycleReport("triggerDiscovery", result?.reportPath);
+        return ToBridgeResult(result, "Lifecycle trigger discovery report written.", "lifecycle_trigger_discovery_failed");
+    }
+
+    private TrainingBridgeBootstrapActionResult RunLifecycleModeComparisonBridgeRequest(string reason)
+    {
+        var result = _actorLifecycleReportService?.RunLifecycleModeComparison(reason, ActorMode);
+        _trainingEnvironmentManager?.UpdateLifecycleReport(
+            "modeComparison",
+            result?.reportPath,
+            TryGetBoolProperty(result?.report, "completeActorFound"),
+            TryGetStringProperty(result?.report, "bestCompleteActorPath"),
+            lifecycleMode: "CurrentNormalMode");
+        return ToBridgeResult(result, "Lifecycle mode comparison report written.", "lifecycle_mode_comparison_failed");
+    }
+
+    private TrainingBridgeBootstrapActionResult RunLifecycleTriggerProbeBridgeRequest(string reason)
+    {
+        var result = _actorLifecycleReportService?.RunLifecycleTriggerProbe(reason, ActorMode);
+        _trainingEnvironmentManager?.UpdateLifecycleReport(
+            "triggerProbe",
+            result?.reportPath,
+            probeStatus: TryGetStringProperty(result?.report, "status") ?? "blocked");
+        return ToBridgeResult(result, "Lifecycle trigger probe report written.", "lifecycle_trigger_probe_failed");
+    }
+
+    private TrainingBridgeBootstrapActionResult RunActorCandidateRankingBridgeRequest(string reason)
+    {
+        var result = _actorLifecycleReportService?.RunActorCandidateRanking(reason, ActorMode);
+        _trainingEnvironmentManager?.UpdateLifecycleReport(
+            "candidateRanking",
+            result?.reportPath,
+            TryGetBoolProperty(result?.report, "completeActorFound"),
+            TryGetStringProperty(result?.report, "bestCompleteActorPath"));
+        return ToBridgeResult(result, "Actor candidate ranking report written.", "actor_candidate_ranking_failed");
+    }
+
+    private TrainingBridgeBootstrapActionResult RunMissingLifecycleDependencyReportBridgeRequest(string reason)
+    {
+        var result = _actorLifecycleReportService?.RunMissingLifecycleDependencyReport(reason, ActorMode);
+        _trainingEnvironmentManager?.UpdateLifecycleReport(
+            "missingDependency",
+            result?.reportPath,
+            TryGetBoolProperty(result?.report, "completeActorFound"),
+            TryGetStringProperty(result?.report, "bestCompleteActorPath"),
+            TryGetStringProperty(result?.report, "mostLikelyMissingDependency"));
+        return ToBridgeResult(result, "Missing lifecycle dependency report written.", "missing_lifecycle_dependency_failed");
     }
 
     private TrainingBridgeBootstrapActionResult RunSummonContextDiscoveryBridgeRequest(string reason)
@@ -828,6 +898,31 @@ internal sealed class TrainingFoundation : IDisposable
             ErrorCode = result?.report != null ? null : errorCode,
             Message = result?.report != null ? message : "Report generation failed."
         };
+    }
+
+    private static string TryGetStringProperty(object value, string propertyName)
+    {
+        try
+        {
+            return value?.GetType().GetProperty(propertyName)?.GetValue(value)?.ToString();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool? TryGetBoolProperty(object value, string propertyName)
+    {
+        try
+        {
+            var raw = value?.GetType().GetProperty(propertyName)?.GetValue(value);
+            return raw is bool flag ? flag : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private TrainingBridgeBootstrapActionResult RunArenaRebuildBridgeRequest(string reason)
@@ -3523,6 +3618,12 @@ internal sealed class TrainingFoundation : IDisposable
                 _preArenaLifecycleDiscovery,
                 afterLifecycle?.report as LocalPlayerLifecycleDiscoveryReport);
             _trainingEnvironmentManager?.UpdatePruningComparison(pruningReportPath);
+            RunLifecycleTimelineBridgeRequest($"{reason}-after-arena");
+            RunLifecycleTriggerDiscoveryBridgeRequest($"{reason}-after-arena");
+            RunActorCandidateRankingBridgeRequest($"{reason}-after-arena");
+            RunLifecycleModeComparisonBridgeRequest($"{reason}-after-arena");
+            RunLifecycleTriggerProbeBridgeRequest($"{reason}-after-arena");
+            RunMissingLifecycleDependencyReportBridgeRequest($"{reason}-after-arena");
             RunSummonContextDiscoveryBridgeRequest($"{reason}-after-arena");
         }
         PublishObservation("training-ready");

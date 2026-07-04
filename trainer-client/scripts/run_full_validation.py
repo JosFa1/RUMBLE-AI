@@ -66,7 +66,18 @@ BOOTSTRAP_STATUS_FIELDS = {
     "onlyGhostHandsDetected",
     "currentBestActorPath",
     "currentBestActorScene",
+    "completeActorFound",
+    "bestCompleteActorPath",
+    "lifecycleMode",
+    "lifecycleProbeStatus",
+    "missingLifecycleDependency",
     "latestActorCompletenessReport",
+    "latestLifecycleTimelineReport",
+    "latestLifecycleTriggerDiscoveryReport",
+    "latestLifecycleModeComparisonReport",
+    "latestLifecycleTriggerProbeReport",
+    "latestActorCandidateRankingReport",
+    "latestMissingLifecycleDependencyReport",
     "latestLocalPlayerLifecycleDiscoveryReport",
     "latestSummonContextReport",
     "latestRealSummonProbeReport",
@@ -265,7 +276,13 @@ def main() -> int:
 
     diagnostic_requests = [
         ("latestActorCompletenessReport", "run_actor_completeness"),
+        ("latestLifecycleTimelineReport", "run_lifecycle_timeline"),
         ("latestLocalPlayerLifecycleDiscoveryReport", "run_local_player_lifecycle_discovery"),
+        ("latestLifecycleTriggerDiscoveryReport", "run_lifecycle_trigger_discovery"),
+        ("latestLifecycleModeComparisonReport", "run_lifecycle_mode_comparison"),
+        ("latestLifecycleTriggerProbeReport", "run_lifecycle_trigger_probe"),
+        ("latestActorCandidateRankingReport", "run_actor_candidate_ranking"),
+        ("latestMissingLifecycleDependencyReport", "run_missing_lifecycle_dependency_report"),
         ("latestSummonContextReport", "run_summon_context_discovery"),
     ]
     for status_field, request_type in diagnostic_requests:
@@ -306,7 +323,13 @@ def main() -> int:
         "actor_discovery_": False,
         "capability_discovery_": False,
         "actor_completeness_": False,
+        "lifecycle_timeline_": False,
         "local_player_lifecycle_discovery_": False,
+        "lifecycle_trigger_discovery_": False,
+        "lifecycle_mode_comparison_": False,
+        "lifecycle_trigger_probe_": False,
+        "actor_candidate_ranking_": False,
+        "missing_lifecycle_dependency_report_": False,
         "summon_context_discovery_": False,
         "real_summon_probe_": False,
         "actor_pruning_comparison_": False,
@@ -361,7 +384,13 @@ def main() -> int:
     actor_discovery = parsed_dumps.get("actor_discovery_", {})
     capability_discovery = parsed_dumps.get("capability_discovery_", {})
     actor_completeness = parsed_dumps.get("actor_completeness_", {})
+    lifecycle_timeline = parsed_dumps.get("lifecycle_timeline_", {})
     lifecycle_discovery = parsed_dumps.get("local_player_lifecycle_discovery_", {})
+    trigger_discovery = parsed_dumps.get("lifecycle_trigger_discovery_", {})
+    mode_comparison = parsed_dumps.get("lifecycle_mode_comparison_", {})
+    trigger_probe = parsed_dumps.get("lifecycle_trigger_probe_", {})
+    actor_ranking = parsed_dumps.get("actor_candidate_ranking_", {})
+    missing_dependency = parsed_dumps.get("missing_lifecycle_dependency_report_", {})
     summon_context = parsed_dumps.get("summon_context_discovery_", {})
     real_summon_probe = parsed_dumps.get("real_summon_probe_", {})
     pruning_comparison = parsed_dumps.get("actor_pruning_comparison_", {})
@@ -399,6 +428,18 @@ def main() -> int:
         actor_warnings.append("only ghost hands detected")
     if not lifecycle_discovery:
         dump_content_failures.append("lifecycle discovery report missing or empty")
+    if not lifecycle_timeline or not isinstance(lifecycle_timeline.get("snapshots"), list):
+        dump_content_failures.append("lifecycle timeline report missing snapshots")
+    if not trigger_discovery or trigger_discovery.get("passiveOnly") is not True:
+        dump_content_failures.append("lifecycle trigger discovery is missing or not passive")
+    if not mode_comparison or not isinstance(mode_comparison.get("modes"), list):
+        dump_content_failures.append("lifecycle mode comparison report missing modes")
+    if not trigger_probe or trigger_probe.get("invokedCount") != 0:
+        dump_content_failures.append("lifecycle trigger probe did not prove zero unsafe invocations")
+    if not actor_ranking or not isinstance(actor_ranking.get("candidates"), list):
+        dump_content_failures.append("actor candidate ranking report missing candidates")
+    if not missing_dependency or not missing_dependency.get("mostLikelyMissingDependency"):
+        dump_content_failures.append("missing lifecycle dependency report missing conclusion")
     if not summon_context:
         dump_content_failures.append("summon context report missing or empty")
     if real_summon_probe.get("realSummonConfirmed") is not True:
@@ -414,6 +455,10 @@ def main() -> int:
         "failures": dump_content_failures,
         "actorWarnings": actor_warnings,
         "actorCompletenessClassification": classification,
+        "completeActorFound": status.get("completeActorFound"),
+        "lifecycleMode": status.get("lifecycleMode"),
+        "lifecycleProbeStatus": status.get("lifecycleProbeStatus"),
+        "missingLifecycleDependency": status.get("missingLifecycleDependency"),
         "realSummonConfirmed": real_summon_probe.get("realSummonConfirmed"),
         "sceneCount": len(scenes) if isinstance(scenes, list) else 0,
         "actorValidated": actor_discovery.get("actorValidated"),
